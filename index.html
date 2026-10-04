@@ -454,7 +454,12 @@ let srcCanvas=document.createElement("canvas");
 let hasImg=false;
 let activeHSL="orange";
 let activeCurve="rgb";
-let grainSeeds=null; // typed array cache for grain
+let GS={}; // grain fields by "WxH": {key,u,…}; may be stale while a rebuild is in flight
+let orig=null,OW=0,OH=0; // full-res decoded original (ImageBitmap, or <img> fallback) for export; srcCanvas is the ≤1600px working copy
+let fast=false,idleT=0,exporting=false;
+// while a control is being dragged render at proxy res; full res again on release / 150ms idle
+function interact(){fast=true;clearTimeout(idleT);idleT=setTimeout(release,150);}
+function release(){clearTimeout(idleT);if(fast){fast=false;schedRender();}}
 let PRESETS=[];
 try{PRESETS=JSON.parse(localStorage.getItem("grain.presets")||"[]");}catch(e){}
 function savePresets(){try{localStorage.setItem("grain.presets",JSON.stringify(PRESETS));}catch(e){}}
@@ -502,10 +507,9 @@ document.querySelectorAll("input[type=range][data-k]").forEach(sl=>{
     sl.parentElement.querySelector(".val").textContent=v;
     updateSliderBg(sl);
     updateThumbVal(sl,v);
-    if(key==="grainSize"||key==="grainRough") grainSeeds=null; // amount is live, field kept
-    schedRender();
+    interact();schedRender(); // grain field is keyed on stock/size/roughness (wantGrain); amount is live
   }
-  sl.addEventListener("input",upd);
+  sl.addEventListener("input",upd);sl.addEventListener("change",release);
   sl.addEventListener("pointerdown",()=>updateThumbVal(sl,sl.value));
   sl.addEventListener("pointerup",()=>{thumbVal.style.display="none";});
   sl.addEventListener("pointerleave",()=>{thumbVal.style.display="none";});
@@ -543,8 +547,9 @@ function syncHSL(){
     const v=parseInt(el.value,10);
     A.hsl[activeHSL][k]=v;
     el.parentElement.querySelector(".val").textContent=v; updateSliderBg(el);
-    schedRender();
+    interact();schedRender();
   });
+  el.addEventListener("change",release);
 });
 syncHSL();
 
@@ -562,8 +567,6 @@ STOCKS.forEach(st=>{
     A.filmStock=st.id;
     document.querySelectorAll(".stockcard").forEach(x=>x.classList.remove("on"));
     card.classList.add("on");
-    // seed new grain for this stock
-    grainSeeds=null;
     schedRender();
   });
   stockRail.appendChild(card);
@@ -573,37 +576,41 @@ STOCKS.forEach(st=>{
 document.getElementById("emptyEl").addEventListener("click",()=>fileIn.click());
 document.getElementById("openBtn").addEventListener("click",()=>fileIn.click());
 fileIn.addEventListener("change",e=>{
-  const f=e.target.files[0]; if(!f)return;
-  const fr=new FileReader();
-  fr.onload=ev=>{
-    const img=new Image();
-    img.onload=()=>{
-      const MAX=1600;
-      let w=img.naturalWidth,h=img.naturalHeight;
-      const sc=Math.min(1,MAX/Math.max(w,h));
-      srcCanvas.width=Math.round(w*sc); srcCanvas.height=Math.round(h*sc);
-      srcCanvas.getContext("2d").drawImage(img,0,0,srcCanvas.width,srcCanvas.height);
-      hasImg=true;grainSeeds=null;colorCache=null;
-      if(G)glSetImage();
-      document.getElementById("emptyEl").style.display="none";
-      compareBar.classList.add("on");
-      document.getElementById("exportBtn").disabled=false;
-      document.getElementById("resetBtn").disabled=false;
-      schedRender();
-    };
-    img.src=ev.target.result;
+  const f=e.target.files[0]; if(!f||exporting)return;
+  // <img> decode (applies EXIF orientation reliably on iOS) off-thread via object URL, then kept as an ImageBitmap for tiled export
+  const url=URL.createObjectURL(f),img=new Image();
+  const go=async()=>{
+    URL.revokeObjectURL(url);
+    const nw=img.naturalWidth,nh=img.naturalHeight; if(!nw)return;
+    let o=img;
+    if(self.createImageBitmap)try{o=await createImageBitmap(img);if(o.width!==nw||o.height!==nh){o.close();o=img;}}catch(e){o=img;}
+    if(orig&&orig.close)orig.close();
+    orig=o;OW=nw;OH=nh;GS={};
+    const MAX=1600,sc=Math.min(1,MAX/Math.max(nw,nh));
+    srcCanvas.width=Math.round(nw*sc); srcCanvas.height=Math.round(nh*sc);
+    srcCanvas.getContext("2d").drawImage(o,0,0,srcCanvas.width,srcCanvas.height);
+    if(o!==img)img.src="";
+    hasImg=true;colorCache=null;srcPix=null;lastSig="";
+    if(G)glSetImage();
+    document.getElementById("emptyEl").style.display="none";
+    compareBar.classList.add("on");
+    document.getElementById("exportBtn").disabled=false;
+    document.getElementById("resetBtn").disabled=false;
+    schedRender();
   };
-  fr.readAsDataURL(f);
+  img.src=url;
+  img.decode().then(go,()=>img.complete?go():img.addEventListener("load",go,{once:true}));
 });
 
 /* ════ COMPARE ════ */
 let comparing=false;
 [mainCanvas,glc].forEach(cv=>{
-  cv.addEventListener("pointerdown",()=>{if(!hasImg)return;comparing=true;showOrig();splitLabel.textContent="ORIGINAL";});
+  cv.addEventListener("pointerdown",()=>{if(!hasImg||exporting)return;comparing=true;showOrig();splitLabel.textContent="ORIGINAL";});
   ["pointerup","pointerleave","pointercancel"].forEach(ev=>cv.addEventListener(ev,()=>{if(comparing){comparing=false;schedRender();}splitLabel.textContent="";}));
 });
 function showOrig(){
-  if(G){glOut(G.T.S.t,{am:0,dh:0,va:0,vi:1,vo:2,ha:0,ba:0,sz:[srcCanvas.width,srcCanvas.height]});return;}
+  lastSig=""; // canvas no longer shows the last render
+  if(G){const w=srcCanvas.width,h=srcCanvas.height;if(glc.width!==w){glc.width=w;glc.height=h;}glOut(G.full.S.t,{am:0,dh:0,va:0,vi:1,vo:2,ha:0,ba:0,sz:[w,h],ts:[w,h],og:[0,0]},G.full);return;}
   show(mainCanvas);
   mainCanvas.width=srcCanvas.width; mainCanvas.height=srcCanvas.height;
   mctx.drawImage(srcCanvas,0,0);
@@ -626,7 +633,7 @@ document.querySelectorAll(".phead-reset").forEach(btn=>{
     else if(tab==="film"){
       A.filmStock="none";A.filmStr=100;A.pushpull=0;A.grain=0;A.grainSize=40;A.grainRough=60;
       document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id==="none"));
-      grainSeeds=null; syncAllSliders();
+      syncAllSliders();
     }
     else{RESET_KEYS[tab].forEach(k=>{
       const def={filmStr:100,vigFeather:50,grainSize:40,grainRough:60,filmStock:"none"};
@@ -636,7 +643,7 @@ document.querySelectorAll(".phead-reset").forEach(btn=>{
   });
 });
 document.getElementById("resetBtn").addEventListener("click",()=>{
-  A=mkAdj(); grainSeeds=null;
+  A=mkAdj();
   document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id==="none"));
   syncAllSliders(); syncHSL(); drawCurve(); schedRender();
 });
@@ -716,9 +723,9 @@ curveCanvas.addEventListener("pointermove",e=>{
   my=Math.max(0,Math.min(255,my));
   if(dragPt===0)mx=0; else if(dragPt===pts.length-1)mx=255;
   else mx=Math.max(pts[dragPt-1].x+2,Math.min(pts[dragPt+1].x-2,mx));
-  pts[dragPt]={x:mx,y:my}; drawCurve(); schedRender();
+  pts[dragPt]={x:mx,y:my}; drawCurve(); interact(); schedRender();
 });
-["pointerup","pointercancel"].forEach(ev=>curveCanvas.addEventListener(ev,()=>dragPt=-1));
+["pointerup","pointercancel"].forEach(ev=>curveCanvas.addEventListener(ev,()=>{dragPt=-1;release();}));
 
 function curveLUT(pts){
   const lut=new Float32Array(256);
@@ -759,7 +766,7 @@ document.getElementById("savePresetBtn").addEventListener("click",()=>{
   savePresets();renderPresets();
 });
 function applyPreset(d){
-  A=JSON.parse(JSON.stringify(d)); grainSeeds=null;
+  A=JSON.parse(JSON.stringify(d));
   document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id===A.filmStock));
   syncAllSliders(); syncHSL(); drawCurve(); schedRender();
 }
@@ -768,50 +775,101 @@ renderPresets();
 /* ════════════════════════════════════════════
    EXPORT
 ════════════════════════════════════════════ */
-document.getElementById("exportBtn").addEventListener("click",()=>{
-  if(!hasImg)return;
+function prog(m){badge.textContent=m;badge.classList.add("on");}
+function toast(m,ms=3500){prog(m);toast.on=1;clearTimeout(toast.t);toast.t=setTimeout(()=>{toast.on=0;badge.classList.remove("on");badge.textContent="Rendering…";},ms);}
+const exportBtn=document.getElementById("exportBtn");
+exportBtn.addEventListener("click",async()=>{
+  if(!hasImg||exporting)return;
+  exporting=true;exportBtn.disabled=true;document.body.style.pointerEvents="none";prog("Exporting…");
+  let cv=null,tmp=false;
   try{
-    (G?glc:mainCanvas).toBlob(blob=>{
-      if(!blob){fallbackExport();return;}
-      try{
-        const url=URL.createObjectURL(blob);
-        const a=document.createElement("a"); a.href=url;
-        a.download="grain-"+Date.now()+".jpg";
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setTimeout(()=>URL.revokeObjectURL(url),4000);
-      }catch{fallbackExport();}
-    },"image/jpeg",0.93);
-  }catch{fallbackExport();}
+    if(G&&orig&&!G.gl.isContextLost()){cv=await exportFull();tmp=true;}
+    else{cv=G?glc:mainCanvas;toast("Exported at preview size");}
+  }catch(e){
+    console.warn("Full-res export failed, exporting preview",e);
+    if(G&&!G.gl.isContextLost())glSetImage();
+    exporting=false;lastSig="";doRender();exporting=true;cv=G?glc:mainCanvas;toast("Exported at preview size");
+  }
+  try{
+    const blob=await new Promise(r=>cv.toBlob(r,"image/jpeg",0.95));
+    if(!blob)fallbackExport(cv);
+    else{
+      const url=URL.createObjectURL(blob),a=document.createElement("a"); a.href=url;
+      a.download="grain-"+Date.now()+".jpg";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url),4000);
+    }
+  }catch{fallbackExport(cv);}
+  if(tmp)cv.width=cv.height=0; // free the full-res canvas
+  document.body.style.pointerEvents="";exportBtn.disabled=false;exporting=false;
+  if(G&&!G.gl.isContextLost()&&!G.full)glSetImage();
+  lastSig="";schedRender();
 });
-function fallbackExport(){
+function fallbackExport(cv){
   try{
     const w=window.open();
-    if(w){w.document.write(`<html><body style="margin:0;background:#000"><img src="${(G?glc:mainCanvas).toDataURL("image/jpeg",0.93)}" style="max-width:100%;display:block"></body></html>`);w.document.close();}
-    else{badge.textContent="Allow popups or long-press image to save";badge.classList.add("on");setTimeout(()=>{badge.classList.remove("on");badge.textContent="Rendering…";},3500);}
+    if(w){w.document.write(`<html><body style="margin:0;background:#000"><img src="${cv.toDataURL("image/jpeg",0.95)}" style="max-width:100%;display:block"></body></html>`);w.document.close();}
+    else toast("Allow popups or long-press image to save");
   }catch(e){console.error(e);}
+}
+// Full-res export: the original is rendered through the same GL passes in overlapping tiles (spatial radii and grain scaled by
+// export/working scale k). Canvas area is capped (iOS ~16.7MP): bigger originals export downscaled, with a toast.
+const EXMAX=16.5e6;
+async function exportFull(){
+  const g=G,gl=g.gl,sc=Math.min(1,Math.sqrt(EXMAX/(OW*OH))),EW=Math.round(OW*sc),EH=Math.round(OH*sc),k=EW/srcCanvas.width;
+  const stock=getStock(),L=await freshLUT(),fx=fxp(stock);
+  const sg=Math.max(fx.am?3:0,fx.hal>0?5+fx.hal*8:0,A.bloom>0?10+A.bloom/100*16:0)*k;
+  const TS=Math.min(2048,gl.getParameter(gl.MAX_TEXTURE_SIZE)),tw=Math.min(EW,TS),th=Math.min(EH,TS);
+  let ov=Math.ceil(3*sg)+4;ov+=ov&1; ov=Math.min(ov,Math.min(tw,th)-256>>1); // overlap >= blur radius; bounded so the core stays >=256px
+  const cw=tw<EW?tw-2*ov:EW,ch=th<EH?th-2*ov:EH,nx=Math.ceil(EW/cw),ny=Math.ceil(EH/ch),N=nx*ny;
+  glFree(); // live targets are rebuilt afterwards
+  const s=mkSet(gl,tw,th,g.F);
+  const gf=A.grain>0?await new Promise(r=>job(1,[tw,th,stock,A.grainSize,A.grainRough,k],r)):null; // one field, reused by every tile
+  glLut(L,lutKey);
+  const tc=document.createElement("canvas");tc.width=tw;tc.height=th;const tx=tc.getContext("2d");
+  const ex=document.createElement("canvas");ex.width=EW;ex.height=EH;const ec=ex.getContext("2d");
+  if(!tx||!ec){ex.width=ex.height=tc.width=tc.height=0;freeSet(gl,s);throw Error("canvas alloc");}
+  glc.width=tw;glc.height=th;
+  try{
+    let n=0;
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+      prog(`Exporting ${++n}/${N}…`);
+      await new Promise(r=>setTimeout(r,16)); // let the indicator paint
+      const x0=i*cw,y0=j*ch,x1=Math.min(EW,x0+cw),y1=Math.min(EH,y0+ch);
+      const sx=Math.max(0,Math.min(EW-tw,x0-ov))&~1,sy=Math.max(0,Math.min(EH-th,y0-ov))&~1; // even origin keeps the half-res glow grid aligned
+      tx.drawImage(orig,sx/sc,sy/sc,tw/sc,th/sc,0,0,tw,th);
+      gl.bindTexture(gl.TEXTURE_2D,s.S.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,tc);
+      const U=glPass(gf,stock,s,k,EW,EH);U.ts=[tw,th];U.og=[sx,sy];
+      glOut(s.C.t,U,s,0);
+      ec.drawImage(glc,x0-sx,y0-sy,x1-x0,y1-y0,x0,y0,x1-x0,y1-y0);
+    }
+  }finally{tc.width=tc.height=0;freeSet(gl,s);}
+  toast(sc<1?`Exported ${EW}×${EH} (canvas limit)`:`Exported ${EW}×${EH}`);
+  return ex;
 }
 
 /* ════════════════════════════════════════════
    HISTOGRAM
 ════════════════════════════════════════════ */
+const HB=new Uint32Array(768); // r,g,b bins, reused
 function drawHistogram(src,dd){
-  const W=histCanvas.width=histCanvas.offsetWidth||300;
-  const H=histCanvas.height=36;
+  const W=histCanvas.offsetWidth||300,H=36;
+  if(histCanvas.width!==W)histCanvas.width=W; if(histCanvas.height!==H)histCanvas.height=H; // resizing reallocates the backing store
   const d=dd||src.getContext("2d").getImageData(0,0,src.width,src.height).data;
-  const rh=new Uint32Array(256),gh=new Uint32Array(256),bh=new Uint32Array(256);
-  for(let p=0;p<d.length;p+=4){rh[d[p]]++;gh[d[p+1]]++;bh[d[p+2]]++;}
-  const mx=Math.max(...rh,...gh,...bh)||1;
+  HB.fill(0);
+  for(let p=0;p<d.length;p+=4){HB[d[p]]++;HB[256+d[p+1]]++;HB[512+d[p+2]]++;}
+  let mx=1;for(let i=0;i<768;i++)if(HB[i]>mx)mx=HB[i];
   hctx.clearRect(0,0,W,H);
-  const drawCh=(arr,col)=>{
+  const drawCh=(o,col)=>{
     hctx.beginPath();
     hctx.moveTo(0,H);
-    for(let i=0;i<256;i++){hctx.lineTo(i/255*W,H-(arr[i]/mx*(H-4)));}
+    for(let i=0;i<256;i++){hctx.lineTo(i/255*W,H-(HB[o+i]/mx*(H-4)));}
     hctx.lineTo(W,H); hctx.closePath();
     hctx.fillStyle=col; hctx.fill();
   };
-  drawCh(rh,"rgba(200,60,60,0.4)");
-  drawCh(gh,"rgba(60,170,60,0.4)");
-  drawCh(bh,"rgba(60,100,200,0.4)");
+  drawCh(0,"rgba(200,60,60,0.4)");
+  drawCh(256,"rgba(60,170,60,0.4)");
+  drawCh(512,"rgba(60,100,200,0.4)");
 }
 
 /* ════════════════════════════════════════════
@@ -820,7 +878,7 @@ function drawHistogram(src,dd){
    simulation: luminance-modulated, size-
    scaled, with optional organic clustering
 ════════════════════════════════════════════ */
-function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal){
+function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal,k=1){ // k: render scale vs the working resolution
   // grainAmt 0-100, grainSizeVal 0-100, grainRoughVal 0-100
   const stockGrain=stock.grain||{size:0.7,rough:0.5,lum:true,colorNoise:0.1};
   const baseSize=stockGrain.size; // stock's native grain size
@@ -836,15 +894,15 @@ function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal){
   // generate 3 independent noise fields in a single flat buffer
   // We use a seeded LCG so grain stays consistent until stock changes
   // but is still random per channel
+  // runs in the worker: one scratch field reused per channel, packed straight into RGBA8 (field+.5)*255 —
+  // exactly what the GL path uploads, and the CPU path reads back as u/255-.5
   const total=w*h;
-  const rField=new Float32Array(total);
-  const gField=new Float32Array(total);
-  const bField=new Float32Array(total);
+  const field=new Float32Array(total),tmp=new Float32Array(total),u=new Uint8ClampedArray(total*4);
 
   const cluster=stockGrain.cluster;
 
-  function noise2d(field,layerScale){
-    const cellSize=Math.max(1, Math.round(baseSize*sizeScale*layerScale*3));
+  function noise2d(layerScale){
+    const cellSize=Math.max(1, Math.round(baseSize*sizeScale*layerScale*3*k));
     // fill with raw uniform noise first
     for(let i=0;i<total;i++) field[i]=Math.random()-0.5;
 
@@ -852,7 +910,6 @@ function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal){
 
     // box blur approximation for grain spreading (cheap gaussian)
     const passes= cluster ? 3 : 1;
-    const tmp=new Float32Array(total);
     for(let pass=0;pass<passes;pass++){
       const r=Math.max(1,Math.round(cellSize*(pass===0?1:0.5)));
       // horizontal
@@ -883,65 +940,65 @@ function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal){
     for(let i=0;i<total;i++) field[i]=(field[i]-mn)/range-0.5;
   }
 
-  noise2d(rField, layerScales[0]);
-  noise2d(gField, layerScales[1]);
-  noise2d(bField, layerScales[2]);
+  for(let c=0;c<3;c++){noise2d(layerScales[c]);for(let i=0,j=c;i<total;i++,j+=4)u[j]=(field[i]+.5)*255;}
 
-  return {rField,gField,bField,roughness,colorNoise,lum:stockGrain.lum};
+  return {u,w,h,roughness,colorNoise,lum:stockGrain.lum};
 }
+
 
 /* ════════════════════════════════════════════
    RENDER PIPELINE
 ════════════════════════════════════════════ */
 let queued=false,colorCache=null; // colorCache: colour-pass output for current image+colour state
 function schedRender(){
-  if(!hasImg||comparing)return;
+  if(!hasImg||comparing||exporting)return;
   if(queued)return;
-  queued=true; badge.classList.add("on");
-  requestAnimationFrame(()=>{doRender();queued=false;badge.classList.remove("on");});
+  queued=true; if(!toast.on)prog("Rendering…");
+  requestAnimationFrame(()=>{doRender();queued=false;if(!toast.on)badge.classList.remove("on");});
 }
 
 function clamp(v){return v<0?0:v>255?255:v;}
 
+// LUT and grain field come from the worker; until the current one lands we render with the newest finished one
+// (its callback re-schedules), and skip renders whose effective inputs match what is already on screen.
+let lastSig="";
 function doRender(){
-  if(G&&!G.gl.isContextLost()){try{return glRender();}catch(e){console.warn("GL render failed, using CPU",e);G=null;}}
-  cpuRender();
+  if(exporting)return;
+  const gl_=G&&!G.gl.isContextLost()&&G.full,ps=gl_&&fast&&G.prox||null,rs=ps||gl_||null; // rs: GL target set (proxy while dragging)
+  const L=getLUT(colorKey()),stock=getStock(),gf=A.grain>0?wantGrain(rs?rs.W:srcCanvas.width,rs?rs.Ht:srcCanvas.height,stock):null;
+  if(!L||(A.grain>0&&!gf&&!ps))return; // first bake still in flight (proxy renders go ahead grainless)
+  const sig=lutKey+"|"+JSON.stringify(A,(k,v)=>!k||NOCOL.has(k)?v:undefined)+"|"+(gf?gf.key:"")+"|"+!!G+(ps?"p":"");
+  if(sig===lastSig)return; lastSig=sig;
+  if(rs){try{return glRender(L,gf,stock,rs);}catch(e){console.warn("GL render failed, using CPU",e);G=null;}}
+  cpuRender(L,gf,stock);
 }
-function cpuRender(){
+// CPU fallback buffers: allocated once per image size, reused every render
+let work=null,wctx=null,wid=null,srcPix=null,blurC=null,blurX=null,spOut=null,offC=null,offX=null,offId=null;
+function cpuRender(L,gf,stock){
   show(mainCanvas);
   const sw=srcCanvas.width,sh=srcCanvas.height;
-  mainCanvas.width=sw; mainCanvas.height=sh;
-
-  // working canvas
-  const work=document.createElement("canvas"); work.width=sw; work.height=sh;
-  const wctx=work.getContext("2d");
-
-  // colour pass: cached per colour state, so grain/vignette/bloom/halation/detail changes skip it
-  const ck=colorKey();
-  let id;
-  if(colorCache&&colorCache.key===ck){id=new ImageData(colorCache.d.slice(),sw,sh);}
-  else{
-    wctx.drawImage(srcCanvas,0,0); id=wctx.getImageData(0,0,sw,sh);
-    pixelPass(id.data,ck); colorCache={key:ck,d:id.data.slice()};
+  if(mainCanvas.width!==sw||mainCanvas.height!==sh){mainCanvas.width=sw; mainCanvas.height=sh;}
+  if(!work||work.width!==sw||work.height!==sh){
+    work=work||document.createElement("canvas"); work.width=sw; work.height=sh;
+    wctx=work.getContext("2d",{willReadFrequently:true}); wid=wctx.createImageData(sw,sh);
+    srcPix=null; colorCache=null; spOut=null; offId=null;
   }
-  const d=id.data;
-  wctx.putImageData(id,0,0);
+  if(!srcPix){wctx.drawImage(srcCanvas,0,0); srcPix=wctx.getImageData(0,0,sw,sh).data;}
+
+  // colour pass: cached per LUT, so grain/vignette/bloom/halation/detail changes skip it
+  const d=wid.data;
+  if(colorCache&&colorCache.key===lutKey)d.set(colorCache.d);
+  else{
+    d.set(srcPix); pixelPass(d,L);
+    (colorCache||(colorCache={d:new Uint8ClampedArray(d.length)})).d.set(d); colorCache.key=lutKey;
+  }
 
   // grain overlay (after tone, before spatial)
-  const stock=getStock();
-  if(A.grain>0){
-    if(!grainSeeds){
-      grainSeeds=buildGrainField(sw,sh,stock,A.grainSize,A.grainRough);
-    }
-    applyGrain(d,sw,sh,grainSeeds,A.grain);
-    id.data.set(d);
-    wctx.putImageData(id,0,0);
-  }
+  if(gf)applyGrain(d,sw,sh,gf,A.grain);
+  wctx.putImageData(wid,0,0);
 
   // spatial
-  const spatialOut=spatialPass(work,sw,sh);
-  mctx.clearRect(0,0,sw,sh);
-  mctx.putImageData(spatialOut,0,0);
+  mctx.putImageData(spatialPass(work,sw,sh),0,0);
 
   // optical effects
   const vigAmt=A.vignette/100, vigF=A.vigFeather/100;
@@ -965,9 +1022,13 @@ for(let v=0;v<256;v++){const i=Math.min(LN-2,v>>3);LIX[v]=i;LFR[v]=(v-LNODE[i])/
 const NOCOL=new Set(["texture","clarity","sharpen","dehaze","vignette","vigFeather","bloom","halation","grain","grainSize","grainRough"]);
 function colorKey(){return JSON.stringify(A,(k,v)=>NOCOL.has(k)?undefined:v);}
 let lut=null,lutKey="";
-function getLUT(key){if(lutKey!==key){lut=buildColorLUT();lutKey=key;}return lut;}
-function pixelPass(d,key){
-  const L=getLUT(key),DG=LN*3,DB=LN*LN*3;
+// newest finished LUT (may lag `key` by one worker round-trip); kicks a bake when stale. null only before the first bake.
+function getLUT(key){
+  if(lutKey!==key&&!lutBusy){lutBusy=true;job(0,A,r=>{lutBusy=false;lut=r;lutKey=key;schedRender();});}
+  return lut;
+}
+function pixelPass(d,L){
+  const DG=LN*3,DB=LN*LN*3;
   for(let p=0;p<d.length;p+=4){
     const r=d[p],g=d[p+1],b=d[p+2];
     const fr=LFR[r],fg=LFR[g],fb=LFR[b],o=((LIX[b]*LN+LIX[g])*LN+LIX[r])*3;
@@ -1214,11 +1275,10 @@ function hslToRgb(h,s,l){
 
 /* ── GRAIN APPLY ── */
 function applyGrain(d,w,h,grain,grainAmt){
-  const {rField,gField,bField,roughness,colorNoise,lum}=grain;
+  const {u,roughness,colorNoise,lum}=grain;
   const intensity=(grainAmt||0)/100;
   const scale=intensity*roughness*90;
   for(let p=0;p<d.length;p+=4){
-    const i=p>>2;
     let r=d[p],g=d[p+1],b=d[p+2];
 
     // luminance mask: grain is strongest in midtones
@@ -1229,16 +1289,17 @@ function applyGrain(d,w,h,grain,grainAmt){
       lumMask=4*L*(1-L)*1.1;
     }
 
-    const gn=rField[i]*scale*lumMask;
-    const gc=gField[i]*scale*lumMask;
-    const gb=bField[i]*scale*lumMask;
+    const fr=u[p]/255-.5,fg=u[p+1]/255-.5,fb=u[p+2]/255-.5;
+    const gn=fr*scale*lumMask;
+    const gc=fg*scale*lumMask;
+    const gb=fb*scale*lumMask;
 
     if(colorNoise>0){
       // independent per-channel: real color film has per-layer grain
       const cScale=colorNoise;
-      d[p]  =clamp(r+gn+rField[i]*scale*cScale);
-      d[p+1]=clamp(g+gc+gField[i]*scale*cScale);
-      d[p+2]=clamp(b+gb+bField[i]*scale*cScale);
+      d[p]  =clamp(r+gn+fr*scale*cScale);
+      d[p+1]=clamp(g+gc+fg*scale*cScale);
+      d[p+2]=clamp(b+gb+fb*scale*cScale);
     } else {
       // monochrome grain (B&W stocks)
       d[p]  =clamp(r+gn);
@@ -1250,15 +1311,12 @@ function applyGrain(d,w,h,grain,grainAmt){
 
 /* ── SPATIAL PASS (clarity/texture/sharpen/dehaze) ── */
 function spatialPass(work,w,h){
-  if(!A.clarity&&!A.texture&&!A.sharpen&&!A.dehaze)
-    return work.getContext("2d").getImageData(0,0,w,h);
-  const src=work.getContext("2d").getImageData(0,0,w,h);
-  const blurC=document.createElement("canvas"); blurC.width=w;blurC.height=h;
-  const bctx=blurC.getContext("2d");
-  bctx.filter="blur(3px)"; bctx.drawImage(work,0,0); bctx.filter="none";
-  const blur=bctx.getImageData(0,0,w,h);
-  const out=mctx.createImageData(w,h);
-  const sd=src.data,bd=blur.data,od=out.data;
+  if(!A.clarity&&!A.texture&&!A.sharpen&&!A.dehaze)return wid; // work holds exactly wid
+  if(!blurC){blurC=document.createElement("canvas");blurX=blurC.getContext("2d",{willReadFrequently:true});}
+  if(blurC.width!==w||blurC.height!==h){blurC.width=w;blurC.height=h;}
+  blurX.clearRect(0,0,w,h);blurX.filter="blur(3px)"; blurX.drawImage(work,0,0); blurX.filter="none";
+  const out=spOut||(spOut=mctx.createImageData(w,h));
+  const sd=wid.data,bd=blurX.getImageData(0,0,w,h).data,od=out.data;
   const amt=A.clarity/100*0.55+A.texture/100*0.75+A.sharpen/100*1.1;
   const dh=A.dehaze/100;
   for(let p=0;p<sd.length;p+=4){
@@ -1293,10 +1351,14 @@ function applyVignette(w,h,amt,feather){
 }
 
 /* ── HALATION ── */
+function glowSrc(w,h){
+  if(!offC){offC=document.createElement("canvas");offX=offC.getContext("2d");}
+  if(offC.width!==w||offC.height!==h){offC.width=w;offC.height=h;}
+  if(!offId)offId=offX.createImageData(w,h);
+  offId.data.set(wid.data); return offId;
+}
 function applyHalation(work,w,h,str){
-  const off=document.createElement("canvas"); off.width=w;off.height=h;
-  const oc=off.getContext("2d"); oc.drawImage(work,0,0);
-  const id=oc.getImageData(0,0,w,h); const d=id.data;
+  const id=glowSrc(w,h),off=offC,oc=offX,d=id.data;
   for(let p=0;p<d.length;p+=4){
     const lum=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2];
     if(lum>190){d[p]=clamp(d[p]+45);d[p+1]=clamp(d[p+1]-12);d[p+2]=clamp(d[p+2]-35);d[p+3]=255;}
@@ -1310,9 +1372,7 @@ function applyHalation(work,w,h,str){
 
 /* ── BLOOM ── */
 function applyBloom(work,w,h,str){
-  const off=document.createElement("canvas"); off.width=w;off.height=h;
-  const oc=off.getContext("2d"); oc.drawImage(work,0,0);
-  const id=oc.getImageData(0,0,w,h); const d=id.data;
+  const id=glowSrc(w,h),off=offC,oc=offX,d=id.data;
   for(let p=0;p<d.length;p+=4){
     const lum=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2];
     d[p+3]=clamp(Math.max(0,(lum-145)/110)*255);
@@ -1321,6 +1381,41 @@ function applyBloom(work,w,h,str){
   mctx.save();mctx.filter=`blur(${10+str*16}px)`;
   mctx.globalCompositeOperation="screen";mctx.globalAlpha=Math.min(0.65,str*0.75);
   mctx.drawImage(off,0,0);mctx.restore();
+}
+
+/* ════════════════════════════════════════════
+   WORKER — LUT bake + grain field build off the main thread.
+   Inline Blob of the same functions (single file); results come back as
+   transferred buffers. Sync fallback if the worker can't start or dies.
+════════════════════════════════════════════ */
+let W=null,wSeq=0,lutBusy=false,grainBusy=false;const WCB={};
+try{
+  W=new Worker(URL.createObjectURL(new Blob([`"use strict";let A;const STOCKS=${JSON.stringify(STOCKS)},HSL_BANDS=${JSON.stringify(HSL_BANDS)},LN=${LN},LNODE=${JSON.stringify(LNODE)};
+${[clamp,softClip,getStock,buildColorLUT,buildToneLUT,curveLUT,isIdentityCurve,buildStockLUTs,applyStockHSL,applyHSL,rgbToHsl,hslToRgb,buildGrainField].join("\n")}
+onmessage=e=>{const[i,t,a]=e.data,r=t?buildGrainField(...a):(A=a,buildColorLUT());postMessage([i,r],[(r.u||r).buffer]);};`],{type:"text/javascript"})));
+  W.onmessage=e=>{const[i,r]=e.data,cb=WCB[i];delete WCB[i];if(cb)cb(r);};
+  W.onerror=e=>{console.warn("Worker failed, baking on main thread",e.message);W.terminate();W=null;
+    for(const i in WCB)delete WCB[i];lutBusy=grainBusy=false;schedRender();};
+}catch(e){W=null;}
+// t: 0 = colour LUT for state a, 1 = grain field for args a. cb runs synchronously without a worker.
+function job(t,a,cb){
+  if(W){WCB[++wSeq]=cb;W.postMessage([wSeq,t,a]);}
+  else cb(t?buildGrainField(...a):buildColorLUT());
+}
+// grain field for the current stock/size/roughness at w×h; a stale same-size field is returned while the new one builds
+function wantGrain(w,h,stock){
+  const k=[stock.id,A.grainSize,A.grainRough].join(),n=w+"x"+h,f=GS[n];
+  if(!(f&&f.key===k)&&!grainBusy){
+    grainBusy=true;
+    job(1,[w,h,stock,A.grainSize,A.grainRough,w/srcCanvas.width],r=>{grainBusy=false;r.key=k;GS[n]=r;schedRender();
+      if(G&&G.prox)wantGrain(G.prox.W,G.prox.Ht,getStock());}); // prefetch the proxy-res field too
+  }
+  return f||null;
+}
+// up-to-date LUT for the current colour state (export)
+function freshLUT(){
+  const k=colorKey();
+  return new Promise(r=>{if(lutKey===k&&lut)return r(lut);job(0,A,x=>{lut=x;lutKey=k;r(x);});});
 }
 
 /* ════════════════════════════════════════════
@@ -1355,12 +1450,12 @@ if(m<.5)return l>190./255.?vec4(clamp(c+vec3(45,-12,-35)/255.,0.,1.),1):vec4(0);
 float a=clamp((l*255.-145.)/110.,0.,1.);return vec4(c*a,a);}
 void main(){ivec2 q=ivec2(gl_FragCoord.xy)*2;o=(g(q)+g(q+ivec2(1,0))+g(q+ivec2(0,1))+g(q+1))*.25;}`],
 // final composite; fy flips for the default framebuffer (textures are stored top row first)
-F:[["C","B","H","M"],`uniform sampler2D C,B,H,M;uniform float am,dh,va,vi,vo,ha,ba,fy;uniform vec2 sz;
+F:[["C","B","H","M"],`uniform sampler2D C,B,H,M;uniform float am,dh,va,vi,vo,ha,ba,fy;uniform vec2 sz,ts,og; // sz full image, ts this tile, og tile origin (export)
 void main(){vec2 q=fy>0.?vec2(uv.x,1.-uv.y):uv;vec3 c=texture(C,q).rgb;
 if(am!=0.)c+=(c-texture(B,q).rgb)*am;
 if(dh!=0.)c=(c-128./255.)*(1.+dh*.35)+(128.+dh*6.)/255.;
 c=clamp(c,0.,1.);
-if(va!=0.){float t=clamp((length(q*sz-sz*.5)-vi)/(vo-vi),0.,1.);c=va>0.?c*(1.-va*t):c-va*t*(1.-c);}
+if(va!=0.){float t=clamp((length(q*ts+og-sz*.5)-vi)/(vo-vi),0.,1.);c=va>0.?c*(1.-va*t):c-va*t*(1.-c);}
 if(ha>0.)c+=ha*texture(H,q).rgb*(1.-c);
 if(ba>0.)c+=ba*texture(M,q).rgb*(1.-c);
 o=vec4(c,1);}`],
@@ -1370,7 +1465,7 @@ function initGL(){
   try{
     const gl=glc.getContext("webgl2",{alpha:false,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,preserveDrawingBuffer:true});
     if(!gl||gl.isContextLost())return;
-    const g={gl,T:{},lk:"",gf:null};
+    const g={gl,full:null,prox:null,hist:null,lk:""};
     const sh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
     const vs=sh(gl.VERTEX_SHADER,VS);
     for(const k in FS){
@@ -1405,15 +1500,32 @@ function tgt(gl,w,h,f){
   const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
   return{t,fb,w,h};
 }
+// target set: source, grain, colour, spatial blur, glow chain at ½ res
+function mkSet(gl,w,h,F){
+  const hw=w+1>>1,hh=h+1>>1;
+  return{W:w,Ht:h,gf:null,S:tgt(gl,w,h,gl.RGBA8),N:tgt(gl,w,h,gl.RGBA8),C:tgt(gl,w,h,F),T:tgt(gl,w,h,F),B:tgt(gl,w,h,F),
+    h0:tgt(gl,hw,hh,F),h1:tgt(gl,hw,hh,F),H:tgt(gl,hw,hh,F),M:tgt(gl,hw,hh,F)};
+}
+function freeSet(gl,s){for(const k in s){const x=s[k];if(x&&x.fb){gl.deleteTexture(x.t);gl.deleteFramebuffer(x.fb);}}}
+function glFree(){const g=G;if(!g)return;freeSet(g.gl,g.full||{});freeSet(g.gl,g.prox||{});if(g.hist)freeSet(g.gl,{x:g.hist});g.full=g.prox=g.hist=null;g.fs&&g.gl.deleteSync(g.fs);g.fs=null;}
+const PROXY=800; // long side of the while-dragging render
 // (re)allocate all targets for the current image — once per load, never per render
 function glSetImage(){
-  const g=G,gl=g.gl,w=srcCanvas.width,h=srcCanvas.height,hw=w+1>>1,hh=h+1>>1,F=g.F,HW=256,HH=Math.max(1,Math.round(HW*h/w));
-  Object.values(g.T).forEach(x=>{gl.deleteTexture(x.t);gl.deleteFramebuffer(x.fb);});
-  g.T={S:tgt(gl,w,h,gl.RGBA8),N:tgt(gl,w,h,gl.RGBA8),C:tgt(gl,w,h,F),T:tgt(gl,w,h,F),B:tgt(gl,w,h,F),
-    h0:tgt(gl,hw,hh,F),h1:tgt(gl,hw,hh,F),H:tgt(gl,hw,hh,F),M:tgt(gl,hw,hh,F),hist:tgt(gl,HW,HH,gl.RGBA8)};
-  gl.bindTexture(gl.TEXTURE_2D,g.T.S.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,srcCanvas);
-  g.gf=null;g.gb=null;g.hb=new Uint8Array(HW*HH*4);
-  glc.width=w;glc.height=h;
+  glFree();
+  const g=G,gl=g.gl,w=srcCanvas.width,h=srcCanvas.height,F=g.F,HW=256,HH=Math.max(1,Math.round(HW*h/w));
+  g.full=mkSet(gl,w,h,F);
+  gl.bindTexture(gl.TEXTURE_2D,g.full.S.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,srcCanvas);
+  const pk=Math.min(1,PROXY/Math.max(w,h));
+  if(pk<1){
+    const pw=Math.round(w*pk),ph=Math.round(h*pk),c=document.createElement("canvas");c.width=pw;c.height=ph;
+    const x=c.getContext("2d");x.imageSmoothingQuality="high";x.drawImage(srcCanvas,0,0,pw,ph);
+    g.prox=mkSet(gl,pw,ph,F);gl.bindTexture(gl.TEXTURE_2D,g.prox.S.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,c);
+    c.width=c.height=0;
+  }
+  g.hist=tgt(gl,HW,HH,gl.RGBA8);g.hb=new Uint8Array(HW*HH*4);g.lk="";
+  // histogram readback goes through a PBO + fence (read next frame) so the CPU never waits on the GPU
+  g.pb=g.pb||gl.createBuffer();gl.bindBuffer(gl.PIXEL_PACK_BUFFER,g.pb);gl.bufferData(gl.PIXEL_PACK_BUFFER,g.hb.length,gl.STREAM_READ);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
+  glc.width=w;glc.height=h;glc.style.width=w+"px";lastSig=""; // fixed CSS width: the canvas buffer shrinks to proxy size while dragging without changing layout
 }
 function draw(p,o,tx,u){
   const gl=G.gl;gl.bindFramebuffer(gl.FRAMEBUFFER,o?o.fb:null);gl.viewport(0,0,o?o.w:glc.width,o?o.h:glc.height);gl.useProgram(p.p);
@@ -1421,43 +1533,67 @@ function draw(p,o,tx,u){
   for(const k in u){const v=u[k],l=p.l[k]??=gl.getUniformLocation(p.p,k);v.length?gl.uniform2f(l,v[0],v[1]):gl.uniform1f(l,v);}
   gl.drawArrays(gl.TRIANGLES,0,3);
 }
-// final composite to the canvas, then again into a 256px-wide target for the histogram readback
-function glOut(c,U){
-  const g=G,gl=g.gl,T=g.T,tx=[c,T.B.t,T.H.t,T.M.t];
-  U.fy=1;draw(g.pF,null,tx,U);U.fy=0;draw(g.pF,T.hist,tx,U);
-  gl.readPixels(0,0,T.hist.w,T.hist.h,gl.RGBA,gl.UNSIGNED_BYTE,g.hb);gl.bindFramebuffer(gl.FRAMEBUFFER,null); // WebKit snapshots (toBlob/drawImage) read the bound FBO
-  drawHistogram(null,g.hb);show(glc);
-}
-function glRender(){
-  const g=G,gl=g.gl,T=g.T,w=srcCanvas.width,h=srcCanvas.height,stock=getStock();
-  const ck=colorKey();
-  if(g.lk!==ck){const L=getLUT(ck),b=g.lb;for(let i=0;i<b.length;i++)b[i]=L[i]/255;
-    gl.bindTexture(gl.TEXTURE_3D,g.lt);gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,LN,LN,LN,gl.RGB,gl.FLOAT,b);g.lk=ck;}
-  // grain: CPU-built field (same per-stock fingerprint code) uploaded once per stock/size/roughness; amount is a live uniform
-  let gs=0,cn=0,lm=0;
-  if(A.grain>0){
-    if(!grainSeeds)grainSeeds=buildGrainField(w,h,stock,A.grainSize,A.grainRough);
-    const s=grainSeeds;
-    if(g.gf!==s){
-      const u=g.gb||(g.gb=new Uint8ClampedArray(w*h*4)),{rField:r,gField:gg,bField:b}=s;
-      for(let i=0,j=0;i<r.length;i++,j+=4){u[j]=(r[i]+.5)*255;u[j+1]=(gg[i]+.5)*255;u[j+2]=(b[i]+.5)*255;}
-      gl.bindTexture(gl.TEXTURE_2D,T.N.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,u);g.gf=s;
-    }
-    gs=A.grain/100*s.roughness*90/255;cn=s.colorNoise||0;lm=s.lum?1:0;
+// final composite to the canvas (samples are resolution-independent, so proxy sets upscale for free), then again into
+// a 256px-wide target for the histogram readback (live only)
+function glOut(c,U,s,hist=1){
+  const g=G,gl=g.gl,tx=[c,s.B.t,s.H.t,s.M.t];
+  U.fy=1;draw(g.pF,null,tx,U);
+  if(hist){
+    U.fy=0;draw(g.pF,g.hist,tx,U);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER,g.pb);gl.readPixels(0,0,g.hist.w,g.hist.h,gl.RGBA,gl.UNSIGNED_BYTE,0);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
   }
-  draw(g.pC,T.C,[T.S.t,T.N.t,g.lt],{gs,cn,lm});
-  const bl=(a,b,dx,dy,s,z)=>draw(g.pB,b,[a.t],{d:[dx/a.w,dy/a.h],s,z});
-  const am=A.clarity/100*0.55+A.texture/100*0.75+A.sharpen/100*1.1,dh=A.dehaze/100;
-  if(am){bl(T.C,T.T,1,0,3,0);bl(T.T,T.B,0,1,3,0);}
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null); // WebKit snapshots (toBlob/drawImage) read the bound FBO
+  if(hist){
+    if(g.fs)gl.deleteSync(g.fs);g.fs=gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE,0);gl.flush();
+    if(!g.hp){g.hp=1;requestAnimationFrame(()=>histPoll(g));}
+  }
+  show(glc);
+}
+function histPoll(g){
+  const gl=g.gl;
+  if(G!==g||!g.fs||gl.isContextLost()){g.hp=0;return;}
+  if(gl.clientWaitSync(g.fs,0,0)===gl.TIMEOUT_EXPIRED){requestAnimationFrame(()=>histPoll(g));return;}
+  gl.deleteSync(g.fs);g.fs=null;g.hp=0;
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER,g.pb);gl.getBufferSubData(gl.PIXEL_PACK_BUFFER,0,g.hb);gl.bindBuffer(gl.PIXEL_PACK_BUFFER,null);
+  drawHistogram(null,g.hb);
+}
+function glLut(L,key){
+  const g=G,gl=g.gl;
+  if(g.lk===key)return;
+  if(!g.lb)g.lb=new Float32Array(LN*LN*LN*3);
+  const b=g.lb;for(let i=0;i<b.length;i++)b[i]=L[i]/255;
+  gl.bindTexture(gl.TEXTURE_3D,g.lt);gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,LN,LN,LN,gl.RGB,gl.FLOAT,b);g.lk=key;
+}
+function fxp(stock){return{am:A.clarity/100*0.55+A.texture/100*0.75+A.sharpen/100*1.1,dh:A.dehaze/100,
+  hal:A.halation/100+(stock.grain&&stock.grain.halation?0.3*(A.filmStr/100):0)};}
+// colour+grain, blur and glow passes into set s; k scales spatial radii (render px / working px). Returns final-pass uniforms for a w×h image.
+function glPass(gf,stock,s,k,w,h){
+  const g=G,gl=g.gl;
+  // grain: worker-built RGBA8 field (per-stock fingerprint) uploaded as-is once per stock/size/roughness; amount is a live uniform
+  let gs=0,cn=0,lm=0;
+  if(gf){
+    if(s.gf!==gf){gl.bindTexture(gl.TEXTURE_2D,s.N.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gf.w,gf.h,gl.RGBA,gl.UNSIGNED_BYTE,gf.u);s.gf=gf;}
+    gs=A.grain/100*gf.roughness*90/255;cn=gf.colorNoise||0;lm=gf.lum?1:0;
+  }
+  draw(g.pC,s.C,[s.S.t,s.N.t,g.lt],{gs,cn,lm});
+  const bl=(a,b,dx,dy,sg,z)=>draw(g.pB,b,[a.t],{d:[dx/a.w,dy/a.h],s:sg,z});
+  const {am,dh,hal}=fxp(stock);
+  if(am){bl(s.C,s.T,1,0,3*k,0);bl(s.T,s.B,0,1,3*k,0);}
   // glows at half res (σ halved); canvas blur(Npx) == gaussian σ=N
-  const glow=(m,sig,out)=>{draw(g.pK,T.h0,[T.C.t],{m});bl(T.h0,T.h1,1,0,sig/2,1);bl(T.h1,out,0,1,sig/2,1);};
-  const hal=A.halation/100+(stock.grain&&stock.grain.halation?0.3*(A.filmStr/100):0);
-  if(hal>0)glow(0,5+hal*8,T.H);
-  if(A.bloom>0)glow(1,10+A.bloom/100*16,T.M);
+  const glow=(m,sig,out)=>{draw(g.pK,s.h0,[s.C.t],{m});bl(s.h0,s.h1,1,0,sig*k/2,1);bl(s.h1,out,0,1,sig*k/2,1);};
+  if(hal>0)glow(0,5+hal*8,s.H);
+  if(A.bloom>0)glow(1,10+A.bloom/100*16,s.M);
   const va=A.vignette/100,vf=A.vigFeather/100;
-  glOut(T.C.t,{am,dh,va:va>0?Math.min(0.92,va*0.7):va<0?-Math.min(0.6,-va*0.5):0,
+  return{am,dh,va:va>0?Math.min(0.92,va*0.7):va<0?-Math.min(0.6,-va*0.5):0,
     vi:Math.max(1,Math.min(w,h)*(0.28+vf*0.2)),vo:Math.max(w,h)*(0.58+vf*0.3),
-    ha:hal>0?Math.min(0.88,hal):0,ba:A.bloom>0?Math.min(0.65,A.bloom/100*0.75):0,sz:[w,h]});
+    ha:hal>0?Math.min(0.88,hal):0,ba:A.bloom>0?Math.min(0.65,A.bloom/100*0.75):0,sz:[w,h]};
+}
+function glRender(L,gf,stock,s){
+  const w=srcCanvas.width,h=srcCanvas.height;
+  glLut(L,lutKey);
+  if(glc.width!==s.W){glc.width=s.W;glc.height=s.Ht;} // proxy: final pass at proxy size too
+  const U=glPass(gf,stock,s,s.W/w,w,h);U.ts=[w,h];U.og=[0,0];
+  glOut(s.C.t,U,s);
 }
 glc.addEventListener("webglcontextlost",e=>{e.preventDefault();G=null;if(hasImg&&!comparing)schedRender();});
 glc.addEventListener("webglcontextrestored",()=>{initGL();if(G&&hasImg){glSetImage();schedRender();}});
