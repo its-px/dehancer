@@ -325,9 +325,9 @@ input[type=range]::-webkit-slider-thumb{
    colour family, and grain fingerprints
 ════════════════════════════════════════════ */
 const STOCKS=[
-{id:"none",name:"No Stock",sw:"#222 #111",neutral:true,grain:{size:0.8,rough:0.5,lum:true}},
+{id:"none",hal:0,name:"No Stock",sw:"#222 #111",neutral:true,grain:{size:0.8,rough:0.5,lum:true}},
 {
-  id:"portra400",name:"Portra 400",sw:"#c9906a #e0c4a0",
+  id:"portra400",hal:0.12,name:"Portra 400",sw:"#c9906a #e0c4a0",
   // Shadow: lifted warm. Highlight: clean, slightly cool.
   shadow:[12,5,-8], mid:[5,1,-5], hi:[3,0,-8],
   lift:7, contrast:1.04,
@@ -340,7 +340,7 @@ const STOCKS=[
   grain:{size:0.7,rough:0.55,lum:true,colorNoise:0.12}, // subtle color grain
 },
 {
-  id:"gold200",name:"Kodak Gold 200",sw:"#d4a030 #b85020",
+  id:"gold200",hal:0.15,name:"Kodak Gold 200",sw:"#d4a030 #b85020",
   shadow:[16,7,-12], mid:[11,4,-10], hi:[14,7,-16],
   lift:5, contrast:1.14,
   sat:1.18,
@@ -350,7 +350,7 @@ const STOCKS=[
   grain:{size:0.9,rough:0.65,lum:true,colorNoise:0.18},
 },
 {
-  id:"ektar100",name:"Ektar 100",sw:"#d03030 #206090",
+  id:"ektar100",hal:0.1,name:"Ektar 100",sw:"#d03030 #206090",
   shadow:[3,-3,-2], mid:[2,-1,-2], hi:[4,0,-4],
   lift:2, contrast:1.24,
   sat:1.38,
@@ -360,7 +360,7 @@ const STOCKS=[
   grain:{size:0.5,rough:0.4,lum:true,colorNoise:0.06},
 },
 {
-  id:"fuji400h",name:"Fuji 400H",sw:"#8fc8b0 #507860",
+  id:"fuji400h",hal:0.1,name:"Fuji 400H",sw:"#8fc8b0 #507860",
   shadow:[-5,4,7], mid:[-3,3,5], hi:[-2,4,9],
   lift:13, contrast:0.95,
   sat:0.85,
@@ -370,21 +370,21 @@ const STOCKS=[
   grain:{size:0.6,rough:0.5,lum:true,colorNoise:0.08},
 },
 {
-  id:"trix400",name:"Tri-X 400",sw:"#383838 #c8c8c8",
+  id:"trix400",hal:0.15,name:"Tri-X 400",sw:"#383838 #c8c8c8",
   shadow:[0,0,0], mid:[0,0,0], hi:[0,0,0],
   lift:4, contrast:1.32, sat:0, mono:true,
   // Tri-X grain is famous: chunky, fractal-clustered
   grain:{size:1.4,rough:0.85,lum:true,cluster:true,colorNoise:0},
 },
 {
-  id:"hp5",name:"Ilford HP5",sw:"#484848 #d8d8d8",
+  id:"hp5",hal:0.1,name:"Ilford HP5",sw:"#484848 #d8d8d8",
   shadow:[0,0,0], mid:[0,0,0], hi:[0,0,0],
   lift:6, contrast:1.18, sat:0, mono:true,
   // HP5 is finer and more even than Tri-X
   grain:{size:1.1,rough:0.7,lum:true,cluster:false,colorNoise:0},
 },
 {
-  id:"instant600",name:"Instant 600",sw:"#c8b890 #506070",
+  id:"instant600",hal:0,name:"Instant 600",sw:"#c8b890 #506070",
   shadow:[7,3,11], mid:[6,2,3], hi:[10,5,-5],
   lift:24, contrast:0.82, sat:0.75,
   hueSat:[0.9,0.9,0.88,0.8,0.8,0.85,0.9,0.9],
@@ -393,16 +393,16 @@ const STOCKS=[
   grain:{size:0.8,rough:0.6,lum:true,colorNoise:0.2},
 },
 {
-  id:"cinestill800t",name:"CineStill 800T",sw:"#405090 #c84060",
+  id:"cinestill800t",hal:1,name:"CineStill 800T",sw:"#405090 #c84060",
   shadow:[-7,-3,12], mid:[-5,0,9], hi:[-8,-2,15],
   lift:5, contrast:1.16, sat:1.06,
   hueSat:[1.0,0.95,0.9,0.88,1.0,1.12,1.1,0.95],
   hueLum:[0.98,0.96,0.94,0.95,1.0,1.02,1.0,0.98],
   gammaR:0.95,gammaG:1.0,gammaB:1.14,
-  grain:{size:1.1,rough:0.75,lum:true,colorNoise:0.25,halation:true},
+  grain:{size:1.1,rough:0.75,lum:true,colorNoise:0.25},
 },
 {
-  id:"velvia50",name:"Velvia 50",sw:"#c04040 #204080",
+  id:"velvia50",hal:0.05,name:"Velvia 50",sw:"#c04040 #204080",
   shadow:[4,-2,-4], mid:[3,-2,-3], hi:[5,0,-6],
   lift:0, contrast:1.38, sat:1.55,
   hueSat:[1.35,1.3,1.4,1.35,1.2,1.25,1.1,1.2],
@@ -411,7 +411,7 @@ const STOCKS=[
   grain:{size:0.4,rough:0.3,lum:false,colorNoise:0.04}, // slide film: almost no grain
 },
 {
-  id:"provia100",name:"Provia 100F",sw:"#6090c0 #b04030",
+  id:"provia100",hal:0.05,name:"Provia 100F",sw:"#6090c0 #b04030",
   shadow:[2,1,-2], mid:[1,0,-1], hi:[2,1,-3],
   lift:2, contrast:1.12, sat:1.08,
   hueSat:[1.05,1.05,1.05,1.05,1.05,1.08,1.0,1.0],
@@ -610,7 +610,7 @@ let comparing=false;
 });
 function showOrig(){
   lastSig=""; // canvas no longer shows the last render
-  if(G){const w=srcCanvas.width,h=srcCanvas.height;if(glc.width!==w){glc.width=w;glc.height=h;}glOut(G.full.S.t,{am:0,dh:0,va:0,vi:1,vo:2,ha:0,ba:0,sz:[w,h],ts:[w,h],og:[0,0]},G.full);return;}
+  if(G){const w=srcCanvas.width,h=srcCanvas.height;if(glc.width!==w){glc.width=w;glc.height=h;}glOut(G.full.S.t,{am:0,dh:0,va:0,vi:1,vo:2,sz:[w,h],ts:[w,h],og:[0,0]},G.full);return;}
   show(mainCanvas);
   mainCanvas.width=srcCanvas.width; mainCanvas.height=srcCanvas.height;
   mctx.drawImage(srcCanvas,0,0);
@@ -818,9 +818,9 @@ const EXMAX=16.5e6;
 async function exportFull(){
   const g=G,gl=g.gl,sc=Math.min(1,Math.sqrt(EXMAX/(OW*OH))),EW=Math.round(OW*sc),EH=Math.round(OH*sc),k=EW/srcCanvas.width;
   const stock=getStock(),L=await freshLUT(),fx=fxp(stock);
-  const sg=Math.max(fx.am?3:0,fx.hal>0?5+fx.hal*8:0,A.bloom>0?10+A.bloom/100*16:0)*k;
+  const sg=Math.max(fx.am?3:0,fx.ha>0||fx.mb>0?24:0)*k; // glow pyramid tail ~ sigma 20k
   const TS=Math.min(2048,gl.getParameter(gl.MAX_TEXTURE_SIZE)),tw=Math.min(EW,TS),th=Math.min(EH,TS);
-  let ov=Math.ceil(3*sg)+4;ov+=ov&1; ov=Math.min(ov,Math.min(tw,th)-256>>1); // overlap >= blur radius; bounded so the core stays >=256px
+  let ov=Math.ceil(3*sg)+4;ov=ov+7&~7; ov=Math.min(ov,Math.min(tw,th)-256>>1)&~7; // multiple of 8: keeps the 1/8-res glow grid aligned // overlap >= blur radius; bounded so the core stays >=256px
   const cw=tw<EW?tw-2*ov:EW,ch=th<EH?th-2*ov:EH,nx=Math.ceil(EW/cw),ny=Math.ceil(EH/ch),N=nx*ny;
   glFree(); // live targets are rebuilt afterwards
   const s=mkSet(gl,tw,th,g.F);
@@ -836,7 +836,7 @@ async function exportFull(){
       prog(`Exporting ${++n}/${N}…`);
       await new Promise(r=>setTimeout(r,16)); // let the indicator paint
       const x0=i*cw,y0=j*ch,x1=Math.min(EW,x0+cw),y1=Math.min(EH,y0+ch);
-      const sx=Math.max(0,Math.min(EW-tw,x0-ov))&~1,sy=Math.max(0,Math.min(EH-th,y0-ov))&~1; // even origin keeps the half-res glow grid aligned
+      const sx=Math.max(0,Math.min(EW-tw,x0-ov))&~7,sy=Math.max(0,Math.min(EH-th,y0-ov))&~7;
       tx.drawImage(orig,sx/sc,sy/sc,tw/sc,th/sc,0,0,tw,th);
       gl.bindTexture(gl.TEXTURE_2D,s.S.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,tc);
       const U=glPass(gf,stock,s,k,EW,EH);U.ts=[tw,th];U.og=[sx,sy];
@@ -987,10 +987,11 @@ function cpuRender(L,gf,stock){
 
   // colour pass: cached per LUT, so grain/vignette/bloom/halation/detail changes skip it
   const d=wid.data;
-  if(colorCache&&colorCache.key===lutKey)d.set(colorCache.d);
+  const ck=lutKey+pre().key;
+  if(colorCache&&colorCache.key===ck)d.set(colorCache.d);
   else{
     d.set(srcPix); pixelPass(d,L);
-    (colorCache||(colorCache={d:new Uint8ClampedArray(d.length)})).d.set(d); colorCache.key=lutKey;
+    (colorCache||(colorCache={d:new Uint8ClampedArray(d.length)})).d.set(d); colorCache.key=ck;
   }
 
   // grain overlay (after tone, before spatial)
@@ -1003,7 +1004,7 @@ function cpuRender(L,gf,stock){
   // optical effects
   const vigAmt=A.vignette/100, vigF=A.vigFeather/100;
   if(vigAmt!==0) applyVignette(sw,sh,vigAmt,vigF);
-  const halTotal=A.halation/100+(stock.grain&&stock.grain.halation?0.3*(A.filmStr/100):0);
+  const halTotal=A.halation/100+((stock.hal||0)*0.3*(A.filmStr/100));
   if(halTotal>0) applyHalation(work,sw,sh,halTotal);
   if(A.bloom>0) applyBloom(work,sw,sh,A.bloom/100);
 
@@ -1013,13 +1014,20 @@ function cpuRender(L,gf,stock){
 function getStock(){return STOCKS.find(s=>s.id===A.filmStock)||STOCKS[0];}
 
 /* ── PIXEL PASS ──
-   Whole colour chain is a pure f(rgb): baked once per colour-state change into a 33³ LUT
-   (nodes at 0,8,…,248,255 so 8-bit inputs land on exact nodes where possible), applied trilinearly. */
-const LN=33,LNODE=[],LIX=new Uint8Array(256),LFR=new Float32Array(256);
-for(let i=0;i<LN;i++)LNODE[i]=i<LN-1?i*8:255;
-for(let v=0;v<256;v++){const i=Math.min(LN-2,v>>3);LIX[v]=i;LFR[v]=(v-LNODE[i])/(LNODE[i+1]-LNODE[i]);}
+   Scene-referred: 8-bit sRGB -> linear scene (soft highlight headroom up to ~1.27, then exposure/WB/push as linear gains) -> shaper -> 3D LUT.
+   The shaper is sRGB-OETF up to 1.0 and log above (so the LUT covers 0..~2.5), nodes uniform in shaper space (LS per 1.0). The LUT bakes
+   shoulder -> display sRGB -> tone/curves/HSL/stock, i.e. the whole colour chain is a pure f(scene rgb). */
+const LS=32,LN=46,SK=.7,SM=1.3,SL=.4396; // LS shaper steps per 1.0, LN nodes (shaper 1.406 = scene 2.5), shoulder knee, shoulder asymptote, log slope
+function srgbDec(c){return c<=.04045?c/12.92:Math.pow((c+.055)/1.055,2.4);}
+function srgbEnc(y){return y<=.0031308?y*12.92:1.055*Math.pow(y,1/2.4)-.055;}
+function shEnc(y){return y<=1?srgbEnc(y):1+SL*Math.log(y);}
+function shDec(v){return v<=1?srgbDec(v):Math.exp((v-1)/SL);}
+// display shoulder (scene -> 0..1 linear) and its inverse; E(1)=1.27 so a white 8-bit pixel round-trips to white
+function shoulder(y){if(y<=SK)return y;return Math.min(1,SK+(1-SK)*SM*(1-Math.exp(-(y-SK)/(1-SK)/SM)));}
+function shoulderInv(x){if(x<=SK)return x;return SK+(1-SK)*-SM*Math.log(1-(x-SK)/(1-SK)/SM);}
+function L1(t,v){const i=v|0,f=v-i;return i>=255?t[255]:t[i]+(t[i+1]-t[i])*f;} // interpolated 256-entry table lookup
 // non-colour keys: changing these must not rebuild the LUT
-const NOCOL=new Set(["texture","clarity","sharpen","dehaze","vignette","vigFeather","bloom","halation","grain","grainSize","grainRough"]);
+const NOCOL=new Set(["exposure","temp","tint","pushpull","texture","clarity","sharpen","dehaze","vignette","vigFeather","bloom","halation","grain","grainSize","grainRough"]);
 function colorKey(){return JSON.stringify(A,(k,v)=>NOCOL.has(k)?undefined:v);}
 let lut=null,lutKey="";
 // newest finished LUT (may lag `key` by one worker round-trip); kicks a bake when stale. null only before the first bake.
@@ -1027,11 +1035,29 @@ function getLUT(key){
   if(lutKey!==key&&!lutBusy){lutBusy=true;job(0,A,r=>{lutBusy=false;lut=r;lutKey=key;schedRender();});}
   return lut;
 }
+// linear scene value for every 8-bit code (per channel): exposure (stops), WB and push as gains in linear light. Cached per state.
+let PRE=null;
+function pre(){
+  const k=A.exposure+","+A.temp+","+A.tint+","+A.pushpull;
+  if(PRE&&PRE.key===k)return PRE;
+  const e=Math.pow(2,A.exposure/50),t=A.temp/100,ti=A.tint/100,p=A.pushpull/100,con=1+p*.3;
+  const gn=[Math.pow(2,t*.4+ti*.1),Math.pow(2,-ti*.3),Math.pow(2,-t*.4+ti*.1)].map(g=>g*e*Math.pow(2,p));
+  const y=new Float32Array(1024),c=new Float32Array(768);
+  for(let i=0;i<256;i++){
+    const b=shoulderInv(srgbDec(i/255));
+    for(let ch=0;ch<3;ch++){
+      let v=b*gn[ch];
+      if(p)v=v>0?.18*Math.pow(v/.18,con):0;
+      y[i*4+ch]=v;c[ch*256+i]=Math.max(0,Math.min(LN-1,shEnc(v)*LS));
+    }
+  }
+  return PRE={key:k,y,c};
+}
 function pixelPass(d,L){
-  const DG=LN*3,DB=LN*LN*3;
+  const DG=LN*3,DB=LN*LN*3,C=pre().c;
   for(let p=0;p<d.length;p+=4){
-    const r=d[p],g=d[p+1],b=d[p+2];
-    const fr=LFR[r],fg=LFR[g],fb=LFR[b],o=((LIX[b]*LN+LIX[g])*LN+LIX[r])*3;
+    const cr=C[d[p]],cg=C[256+d[p+1]],cb=C[512+d[p+2]];
+    const ir=Math.min(LN-2,cr|0),ig=Math.min(LN-2,cg|0),ib=Math.min(LN-2,cb|0),fr=cr-ir,fg=cg-ig,fb=cb-ib,o=((ib*LN+ig)*LN+ir)*3;
     for(let c=0;c<3;c++){
       const i=o+c;
       const x00=L[i]+(L[i+3]-L[i])*fr, x10=L[i+DG]+(L[i+DG+3]-L[i+DG])*fr;
@@ -1044,7 +1070,6 @@ function pixelPass(d,L){
 function buildColorLUT(){
   const stock=getStock();
   const fs=A.filmStr/100;
-  const push=A.pushpull/100;
   const toneLUT=buildToneLUT();
   const rgbLUT=curveLUT(A.curves.rgb);
   const rLUT=curveLUT(A.curves.r), gLUT=curveLUT(A.curves.g), bLUT=curveLUT(A.curves.b);
@@ -1052,14 +1077,15 @@ function buildColorLUT(){
   const useR=!isIdentityCurve(A.curves.r), useG=!isIdentityCurve(A.curves.g), useB=!isIdentityCurve(A.curves.b);
   let stockLuts=null;
   if(!stock.neutral) stockLuts=buildStockLUTs(stock);
-  const temp=A.temp, tint=A.tint, vib=A.vibrance/100, sat=A.saturation/100;
+  const vib=A.vibrance/100, sat=A.saturation/100;
   const anyHSL=HSL_BANDS.some(b=>{const v=A.hsl[b.id];return v.h||v.s||v.l;});
   const dedigiAmt=A.dedigi/100;
   const filmBaseAmt=A.filmBase/100;
   const out=new Float32Array(LN*LN*LN*3);
+  const nd=[];for(let i=0;i<LN;i++)nd[i]=255*srgbEnc(shoulder(shDec(i/LS))); // node -> display code via the shoulder
   let o=0;
   for(let bi=0;bi<LN;bi++)for(let gi=0;gi<LN;gi++)for(let ri=0;ri<LN;ri++){
-    let r=LNODE[ri],g=LNODE[gi],b=LNODE[bi];
+    let r=nd[ri],g=nd[gi],b=nd[bi];
     // analog pre-pass: undo digital photography over-processing
     if(dedigiAmt>0||filmBaseAmt>0){
       if(dedigiAmt>0){
@@ -1087,24 +1113,14 @@ function buildColorLUT(){
       r=Math.round(clamp(r)); g=Math.round(clamp(g)); b=Math.round(clamp(b));
     }
 
-    // 1. white balance
-    if(temp){r=clamp(r+temp*0.45);b=clamp(b-temp*0.45);}
-    if(tint){g=clamp(g-tint*0.35);r=clamp(r+tint*0.15);b=clamp(b+tint*0.15);}
-
-    // 2. push/pull (exposure+contrast together, like dev time)
-    if(push){
-      const ex=push*40, cb=1+push*0.3;
-      r=clamp((clamp(r+ex)-128)*cb+128);
-      g=clamp((clamp(g+ex)-128)*cb+128);
-      b=clamp((clamp(b+ex)-128)*cb+128);
-    }
+    // exposure / WB / push live in linear light (pre()); shoulder is baked into the node values
 
     // 3. master tone (exposure/contrast/h/s/w/b/fade)
-    r=toneLUT[r|0]; g=toneLUT[g|0]; b=toneLUT[b|0];
+    r=L1(toneLUT,r); g=L1(toneLUT,g); b=L1(toneLUT,b);
 
     // 4. curves
-    if(useRGB){r=rgbLUT[r|0];g=rgbLUT[g|0];b=rgbLUT[b|0];}
-    if(useR)r=rLUT[r|0]; if(useG)g=gLUT[g|0]; if(useB)b=bLUT[b|0];
+    if(useRGB){r=L1(rgbLUT,r);g=L1(rgbLUT,g);b=L1(rgbLUT,b);}
+    if(useR)r=L1(rLUT,r); if(useG)g=L1(gLUT,g); if(useB)b=L1(bLUT,b);
 
     // 5. HSL targeted
     if(anyHSL){
@@ -1131,9 +1147,9 @@ function buildColorLUT(){
         const lum=0.299*clamp(r)+0.587*clamp(g)+0.114*clamp(b);
         fr=fg=fb=lum;
       } else {fr=r;fg=g;fb=b;}
-      fr=stockLuts[0][clamp(fr)|0];
-      fg=stockLuts[1][clamp(fg)|0];
-      fb=stockLuts[2][clamp(fb)|0];
+      fr=L1(stockLuts[0],clamp(fr));
+      fg=L1(stockLuts[1],clamp(fg));
+      fb=L1(stockLuts[2],clamp(fb));
 
       // per-hue sat/lum overlay for colour stocks
       if(!stock.mono && stock.hueSat){
@@ -1158,15 +1174,12 @@ function buildColorLUT(){
 /* ── TONE LUT ── */
 function buildToneLUT(){
   const lut=new Float32Array(256);
-  const ex=A.exposure*0.85, con=1+A.contrast/100*0.65;
+  const con=1+A.contrast/100*0.65;
   const hi=A.highlights/100, sh=A.shadows/100;
   const wh=A.whites/100, bl=A.blacks/100;
   const fade=A.fade/100;
   for(let i=0;i<256;i++){
-    let v=i+ex;
-    // soft shoulder: prevents hard clipping
-    v=softClip(v);
-    v=(v-128)*con+128;
+    let v=(i-128)*con+128; // (highlight shoulder is the scene->display transform in the LUT bake)
     const t=clamp(v)/255;
     // region-weighted adjustments
     v+=hi*55*Math.pow(t,1.6);
@@ -1178,12 +1191,6 @@ function buildToneLUT(){
     lut[i]=clamp(v);
   }
   return lut;
-}
-function softClip(v){
-  // S-shaped shoulder like real film — prevents harsh highlight clipping
-  if(v<=230)return v;
-  const t=(v-230)/80;
-  return 230+(255-230)*(1-Math.exp(-t*2));
 }
 
 /* ── STOCK LUTs ── */
@@ -1390,8 +1397,8 @@ function applyBloom(work,w,h,str){
 ════════════════════════════════════════════ */
 let W=null,wSeq=0,lutBusy=false,grainBusy=false;const WCB={};
 try{
-  W=new Worker(URL.createObjectURL(new Blob([`"use strict";let A;const STOCKS=${JSON.stringify(STOCKS)},HSL_BANDS=${JSON.stringify(HSL_BANDS)},LN=${LN},LNODE=${JSON.stringify(LNODE)};
-${[clamp,softClip,getStock,buildColorLUT,buildToneLUT,curveLUT,isIdentityCurve,buildStockLUTs,applyStockHSL,applyHSL,rgbToHsl,hslToRgb,buildGrainField].join("\n")}
+  W=new Worker(URL.createObjectURL(new Blob([`"use strict";let A;const STOCKS=${JSON.stringify(STOCKS)},HSL_BANDS=${JSON.stringify(HSL_BANDS)},LN=${LN},LS=${LS},SK=${SK},SM=${SM},SL=${SL};
+${[clamp,L1,srgbDec,srgbEnc,shEnc,shDec,shoulder,getStock,buildColorLUT,buildToneLUT,curveLUT,isIdentityCurve,buildStockLUTs,applyStockHSL,applyHSL,rgbToHsl,hslToRgb,buildGrainField].join("\n")}
 onmessage=e=>{const[i,t,a]=e.data,r=t?buildGrainField(...a):(A=a,buildColorLUT());postMessage([i,r],[(r.u||r).buffer]);};`],{type:"text/javascript"})));
   W.onmessage=e=>{const[i,r]=e.data,cb=WCB[i];delete WCB[i];if(cb)cb(r);};
   W.onerror=e=>{console.warn("Worker failed, baking on main thread",e.message);W.terminate();W=null;
@@ -1420,9 +1427,10 @@ function freshLUT(){
 
 /* ════════════════════════════════════════════
    WEBGL2 PIPELINE
-   src ─LUT3D+grain→ C ─┬─ gauss σ3 → B (clarity/texture/sharpen)
-                        ├─ ½-res mask → gauss → H (halation) / M (bloom)
-                        └─ final: spatial+dehaze, vignette, screen H, screen M → canvas (+ small FBO for histogram)
+   src ─ 8-bit→linear scene (exposure/WB/push) ─┬─ ½¼⅛ glow pyramid (scene rgb + halation luma) ─┐
+                                              └─ + bloom mix + halation (linear) → shaper → LUT3D (shoulder, tone, stock) + grain → C
+   C ─┬─ gauss σ3 → B (clarity/texture/sharpen)
+      └─ final: spatial+dehaze, vignette → canvas (+ small FBO for histogram)
    Same maths as the CPU path above, which stays as the fallback (no WebGL2 / context lost / GL error).
 ════════════════════════════════════════════ */
 let G=null;
@@ -1431,10 +1439,16 @@ in vec2 p;out vec2 uv;void main(){uv=p*.5+.5;gl_Position=vec4(p,0,1);}`;
 const FH=`#version 300 es
 precision highp float;precision highp sampler3D;in vec2 uv;out vec4 o;const vec3 Y=vec3(.299,.587,.114);`;
 const FS={
-// colour LUT (nodes 0,8,…,248,255 → non-uniform last cell, remapped so hardware trilinear == CPU trilinear) + grain
-C:[["S","N","L"],`uniform sampler2D S,N;uniform sampler3D L;uniform float gs,cn,lm;
-void main(){vec3 v=texture(S,uv).rgb*255.,i=mix(v/8.,31.+(v-248.)/7.,step(248.,v));
-vec3 c=texture(L,(i+.5)/33.).rgb;
+// scene-linear colour: 8-bit code -> linear scene via the per-state table PL (exposure/WB/push already applied), + glow pyramid
+// (bloom = energy-conserving mix toward the blurred scene, halation = red-biased additive tail), -> shaper -> 3D LUT (does the
+// shoulder/tone/stock, outputs display sRGB), + grain on the display signal
+C:[["S","N","PL","L","G1","G2","G3"],`uniform sampler2D S,N,PL,G1,G2,G3;uniform sampler3D L;uniform float gs,cn,lm,ha,mb,fs;
+const vec3 HT=vec3(1.,.3,.04),HW=vec3(.4,.35,.25),BW=vec3(.34,.33,.33);
+float e(float y){return y<=.0031308?y*12.92:y<=1.?1.055*pow(y,1./2.4)-.055:1.+${SL}*log(y);}
+void main(){ivec3 i=ivec3(texture(S,uv).rgb*255.+.5);vec3 y=vec3(texelFetch(PL,ivec2(i.r,0),0).r,texelFetch(PL,ivec2(i.g,0),0).g,texelFetch(PL,ivec2(i.b,0),0).b);
+if(ha>0.||mb>0.){vec4 a=texture(G1,uv),b=texture(G2,uv),d=texture(G3,uv);
+y=mix(y,(a.rgb*BW.x+b.rgb*BW.y+d.rgb*BW.z)/fs,mb)+ha*(a.a*HW.x+b.a*HW.y+d.a*HW.z)/fs*HT;}
+vec3 c=texture(L,(clamp(vec3(e(y.r),e(y.g),e(y.b))*${LS}.,0.,${LN-1}.)+.5)/${LN}.).rgb;
 if(gs>0.){vec3 f=texture(N,uv).rgb-.5;float Lm=dot(c,Y),m=lm>0.?4.*Lm*(1.-Lm)*1.1:1.;c+=cn>0.?f*gs*(m+cn):vec3(f.r*gs*m);}
 o=vec4(clamp(c,0.,1.),1);}`],
 // separable gaussian, linear-sampling pairs; z=1 → transparent outside (canvas blur filter edge behaviour)
@@ -1443,21 +1457,21 @@ vec4 f(vec2 q){return z>0.&&(q.x<0.||q.y<0.||q.x>1.||q.y>1.)?vec4(0):texture(T,q
 void main(){int R=int(ceil(s*3.));float k=-.5/(s*s),W=1.;vec4 a=texture(T,uv);
 for(int i=1;i<=R;i+=2){float w1=exp(float(i*i)*k),w2=exp(float((i+1)*(i+1))*k),w=w1+w2,x=float(i)+w2/w;a+=(f(uv+d*x)+f(uv-d*x))*w;W+=2.*w;}
 o=a/W;}`],
-// ½-res premultiplied glow source: m=0 halation (lum>190, warm shift), m=1 bloom (alpha ramp 145..255)
-K:[["T"],`uniform sampler2D T;uniform float m;
-vec4 g(ivec2 q){vec3 c=texelFetch(T,min(q,textureSize(T,0)-1),0).rgb;float l=dot(c,Y);
-if(m<.5)return l>190./255.?vec4(clamp(c+vec3(45,-12,-35)/255.,0.,1.),1):vec4(0);
-float a=clamp((l*255.-145.)/110.,0.,1.);return vec4(c*a,a);}
-void main(){ivec2 q=ivec2(gl_FragCoord.xy)*2;o=(g(q)+g(q+ivec2(1,0))+g(q+ivec2(0,1))+g(q+1))*.25;}`],
-// final composite; fy flips for the default framebuffer (textures are stored top row first)
-F:[["C","B","H","M"],`uniform sampler2D C,B,H,M;uniform float am,dh,va,vi,vo,ha,ba,fy;uniform vec2 sz,ts,og; // sz full image, ts this tile, og tile origin (export)
+// ½-res glow source from the linear scene: rgb = scene (bloom), a = soft-thresholded luminance (halation); scaled by fs for 8-bit targets
+K:[["T","PL"],`uniform sampler2D T,PL;uniform float fs;
+vec4 g(ivec2 q){ivec3 i=ivec3(texelFetch(T,min(q,textureSize(T,0)-1),0).rgb*255.+.5);
+vec3 c=vec3(texelFetch(PL,ivec2(i.r,0),0).r,texelFetch(PL,ivec2(i.g,0),0).g,texelFetch(PL,ivec2(i.b,0),0).b);
+float l=dot(c,vec3(.2126,.7152,.0722)),w=smoothstep(.45,1.3,l);return vec4(c,l*w*w);}
+void main(){ivec2 q=ivec2(gl_FragCoord.xy)*2;o=(g(q)+g(q+ivec2(1,0))+g(q+ivec2(0,1))+g(q+1))*.25*fs;}`],
+// 2x downsample (bilinear lands on the 2x2 centre)
+D:[["T"],`uniform sampler2D T;void main(){o=texture(T,uv);}`],
+// final: spatial+dehaze, vignette; fy flips for the default framebuffer (textures are stored top row first)
+F:[["C","B"],`uniform sampler2D C,B;uniform float am,dh,va,vi,vo,fy;uniform vec2 sz,ts,og; // sz full image, ts this tile, og tile origin (export)
 void main(){vec2 q=fy>0.?vec2(uv.x,1.-uv.y):uv;vec3 c=texture(C,q).rgb;
 if(am!=0.)c+=(c-texture(B,q).rgb)*am;
 if(dh!=0.)c=(c-128./255.)*(1.+dh*.35)+(128.+dh*6.)/255.;
 c=clamp(c,0.,1.);
 if(va!=0.){float t=clamp((length(q*ts+og-sz*.5)-vi)/(vo-vi),0.,1.);c=va>0.?c*(1.-va*t):c-va*t*(1.-c);}
-if(ha>0.)c+=ha*texture(H,q).rgb*(1.-c);
-if(ba>0.)c+=ba*texture(M,q).rgb*(1.-c);
 o=vec4(c,1);}`],
 };
 function initGL(){
@@ -1483,6 +1497,9 @@ function initGL(){
     [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(k=>gl.texParameteri(gl.TEXTURE_3D,k,gl.LINEAR));
     [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T,gl.TEXTURE_WRAP_R].forEach(k=>gl.texParameteri(gl.TEXTURE_3D,k,gl.CLAMP_TO_EDGE));
     g.lb=new Float32Array(LN*LN*LN*3);
+    // 256x1 per-state table: 8-bit code -> linear scene rgb (read with texelFetch, so 16F precision is plenty)
+    g.pl=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,g.pl);gl.texStorage2D(gl.TEXTURE_2D,1,gl.RGBA16F,256,1);
+    [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.NEAREST));g.pk="";
     // intermediates: RGBA16F if renderable, else RGBA8
     g.F=gl.RGBA8;
     if(gl.getExtension("EXT_color_buffer_float")||gl.getExtension("EXT_color_buffer_half_float")){
@@ -1490,6 +1507,7 @@ function initGL(){
       if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE)g.F=gl.RGBA16F;
       gl.deleteTexture(t.t);gl.deleteFramebuffer(t.fb);
     }
+    g.sc=g.F===gl.RGBA8?.25:1; // 8-bit fallback stores the glow chain at 1/4 scale to keep headroom
     G=g;
   }catch(e){console.warn("WebGL2 unavailable, using CPU",e);G=null;}
 }
@@ -1500,11 +1518,11 @@ function tgt(gl,w,h,f){
   const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
   return{t,fb,w,h};
 }
-// target set: source, grain, colour, spatial blur, glow chain at ½ res
+// target set: source, grain, colour, spatial blur, glow pyramid (1/2, 1/4, 1/8 res; t* = blur temps)
 function mkSet(gl,w,h,F){
-  const hw=w+1>>1,hh=h+1>>1;
-  return{W:w,Ht:h,gf:null,S:tgt(gl,w,h,gl.RGBA8),N:tgt(gl,w,h,gl.RGBA8),C:tgt(gl,w,h,F),T:tgt(gl,w,h,F),B:tgt(gl,w,h,F),
-    h0:tgt(gl,hw,hh,F),h1:tgt(gl,hw,hh,F),H:tgt(gl,hw,hh,F),M:tgt(gl,hw,hh,F)};
+  const a=w+1>>1,b=h+1>>1,c=a+1>>1,d=b+1>>1,e=c+1>>1,f=d+1>>1,m=(x,y)=>tgt(gl,x,y,F);
+  return{W:w,Ht:h,gf:null,S:tgt(gl,w,h,gl.RGBA8),N:tgt(gl,w,h,gl.RGBA8),C:m(w,h),T:m(w,h),B:m(w,h),
+    g1:m(a,b),g2:m(c,d),g3:m(e,f),t1:m(a,b),t2:m(c,d),t3:m(e,f)};
 }
 function freeSet(gl,s){for(const k in s){const x=s[k];if(x&&x.fb){gl.deleteTexture(x.t);gl.deleteFramebuffer(x.fb);}}}
 function glFree(){const g=G;if(!g)return;freeSet(g.gl,g.full||{});freeSet(g.gl,g.prox||{});if(g.hist)freeSet(g.gl,{x:g.hist});g.full=g.prox=g.hist=null;g.fs&&g.gl.deleteSync(g.fs);g.fs=null;}
@@ -1536,7 +1554,7 @@ function draw(p,o,tx,u){
 // final composite to the canvas (samples are resolution-independent, so proxy sets upscale for free), then again into
 // a 256px-wide target for the histogram readback (live only)
 function glOut(c,U,s,hist=1){
-  const g=G,gl=g.gl,tx=[c,s.B.t,s.H.t,s.M.t];
+  const g=G,gl=g.gl,tx=[c,s.B.t];
   U.fy=1;draw(g.pF,null,tx,U);
   if(hist){
     U.fy=0;draw(g.pF,g.hist,tx,U);
@@ -1564,29 +1582,31 @@ function glLut(L,key){
   const b=g.lb;for(let i=0;i<b.length;i++)b[i]=L[i]/255;
   gl.bindTexture(gl.TEXTURE_3D,g.lt);gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,LN,LN,LN,gl.RGB,gl.FLOAT,b);g.lk=key;
 }
-function fxp(stock){return{am:A.clarity/100*0.55+A.texture/100*0.75+A.sharpen/100*1.1,dh:A.dehaze/100,
-  hal:A.halation/100+(stock.grain&&stock.grain.halation?0.3*(A.filmStr/100):0)};}
-// colour+grain, blur and glow passes into set s; k scales spatial radii (render px / working px). Returns final-pass uniforms for a w×h image.
+// ha: halation gain (slider scaled by the stock's film-base halation + the stock's own amount), mb: bloom mix
+function fxp(stock){const sh=stock.hal||0,fs=A.filmStr/100;
+  return{am:A.clarity/100*0.55+A.texture/100*0.75+A.sharpen/100*1.1,dh:A.dehaze/100,
+  ha:(A.halation/100*(.6+.8*sh)+sh*.3*fs)*4,mb:A.bloom/100*.6};}
+// pyramid + colour+grain, blur passes into set s; k scales spatial radii (render px / working px). Returns final-pass uniforms for a w*h image.
 function glPass(gf,stock,s,k,w,h){
-  const g=G,gl=g.gl;
+  const g=G,gl=g.gl,P=pre();
+  if(g.pk!==P.key){gl.bindTexture(gl.TEXTURE_2D,g.pl);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,256,1,gl.RGBA,gl.FLOAT,P.y);g.pk=P.key;}
   // grain: worker-built RGBA8 field (per-stock fingerprint) uploaded as-is once per stock/size/roughness; amount is a live uniform
   let gs=0,cn=0,lm=0;
   if(gf){
     if(s.gf!==gf){gl.bindTexture(gl.TEXTURE_2D,s.N.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gf.w,gf.h,gl.RGBA,gl.UNSIGNED_BYTE,gf.u);s.gf=gf;}
     gs=A.grain/100*gf.roughness*90/255;cn=gf.colorNoise||0;lm=gf.lum?1:0;
   }
-  draw(g.pC,s.C,[s.S.t,s.N.t,g.lt],{gs,cn,lm});
-  const bl=(a,b,dx,dy,sg,z)=>draw(g.pB,b,[a.t],{d:[dx/a.w,dy/a.h],s:sg,z});
-  const {am,dh,hal}=fxp(stock);
-  if(am){bl(s.C,s.T,1,0,3*k,0);bl(s.T,s.B,0,1,3*k,0);}
-  // glows at half res (σ halved); canvas blur(Npx) == gaussian σ=N
-  const glow=(m,sig,out)=>{draw(g.pK,s.h0,[s.C.t],{m});bl(s.h0,s.h1,1,0,sig*k/2,1);bl(s.h1,out,0,1,sig*k/2,1);};
-  if(hal>0)glow(0,5+hal*8,s.H);
-  if(A.bloom>0)glow(1,10+A.bloom/100*16,s.M);
+  const bl=(a,b,dx,dy,sg)=>draw(g.pB,b,[a.t],{d:[dx/a.w,dy/a.h],s:sg,z:0});
+  const {am,dh,ha,mb}=fxp(stock);
+  if(ha>0||mb>0){ // scene-linear glow source -> 1/2,1/4,1/8 res, each blurred sigma 2.5k own px (~5,10,20k full-res px: long tail)
+    draw(g.pK,s.g1,[s.S.t,g.pl],{fs:g.sc});draw(g.pD,s.g2,[s.g1.t],{});draw(g.pD,s.g3,[s.g2.t],{});
+    [[s.g1,s.t1],[s.g2,s.t2],[s.g3,s.t3]].forEach(([a,t])=>{bl(a,t,1,0,2.5*k);bl(t,a,0,1,2.5*k);});
+  }
+  draw(g.pC,s.C,[s.S.t,s.N.t,g.pl,g.lt,s.g1.t,s.g2.t,s.g3.t],{gs,cn,lm,ha,mb,fs:g.sc});
+  if(am){bl(s.C,s.T,1,0,3*k);bl(s.T,s.B,0,1,3*k);}
   const va=A.vignette/100,vf=A.vigFeather/100;
   return{am,dh,va:va>0?Math.min(0.92,va*0.7):va<0?-Math.min(0.6,-va*0.5):0,
-    vi:Math.max(1,Math.min(w,h)*(0.28+vf*0.2)),vo:Math.max(w,h)*(0.58+vf*0.3),
-    ha:hal>0?Math.min(0.88,hal):0,ba:A.bloom>0?Math.min(0.65,A.bloom/100*0.75):0,sz:[w,h]};
+    vi:Math.max(1,Math.min(w,h)*(0.28+vf*0.2)),vo:Math.max(w,h)*(0.58+vf*0.3),sz:[w,h]};
 }
 function glRender(L,gf,stock,s){
   const w=srcCanvas.width,h=srcCanvas.height;
