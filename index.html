@@ -148,6 +148,8 @@ input[type=range]::-webkit-slider-thumb{
 /* ── CURVE ── */
 .curve-ch-row{display:flex;gap:6px;margin-bottom:10px;}
 .cch{font-size:9px;letter-spacing:0.06em;padding:5px 10px;border:1px solid var(--line);background:none;color:var(--dimmer);cursor:pointer;font-family:var(--font);}
+.pch{font-size:9px;letter-spacing:0.06em;padding:5px 8px;border:1px solid var(--line);background:none;color:var(--dimmer);cursor:pointer;font-family:var(--font);}
+.pch.on{border-color:var(--amber2);color:var(--amber2);}
 .cch.on{border-color:currentColor;}
 .cch[data-c=rgb].on{color:var(--paper);}
 .cch[data-c=r].on{color:#d84040;}
@@ -289,8 +291,9 @@ input[type=range]::-webkit-slider-thumb{
   <div class="phead"><span class="phead-title">Film Stock</span><button class="phead-reset" data-rst="film">Reset</button></div>
   <div class="rail" id="stockRail"></div>
   <div class="slab">Emulation Controls</div>
+  <div class="row"><label>Print</label><div id="printRow" style="display:flex;gap:6px;flex-wrap:wrap"></div></div>
   <div class="row"><label>Strength</label><input type="range" data-k="filmStr" min="0" max="100" value="100"><span class="val">100</span></div>
-  <div class="row"><label>Push/Pull</label><input type="range" data-k="pushpull" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Push (stops)</label><input type="range" data-k="pushpull" min="-200" max="300" step="25" value="0"><span class="val">0</span></div>
   <div class="slab">Analog Processing</div>
   <div class="row"><label>De-digital</label><input type="range" data-k="dedigi" min="0" max="100" value="0"><span class="val">0</span></div>
   <div class="row"><label>Film Base</label><input type="range" data-k="filmBase" min="0" max="100" value="0"><span class="val">0</span></div>
@@ -324,101 +327,108 @@ input[type=range]::-webkit-slider-thumb{
    per-region hue rotation, sat override per
    colour family, and grain fingerprints
 ════════════════════════════════════════════ */
+/* Two-stage film model (T7-T10). EVERY number below is an approximation tuned by eye, informed by public datasheet behaviour
+   (characteristic-curve shape, relative contrast/saturation, grain class); none of it is measured data. Units are this model's own
+   (density per log10 exposure); grainFitStock() can refit a stock from real chart patches.
+   neg: per-layer [R,G,B] characteristic curves D=dcv(logE): g gamma, m pivot fraction of dr at 18% grey, dr density range, tw toe, sw shoulder,
+        base orange mask+fog density (balanced out by the printer lights), x interlayer crosstalk (rows are normalised, so greys stay neutral).
+   rev: reversal stock = single stage (curve reads straight out as the final density), same fields.
+   warm: log10 output tint at mid grey after printer-light timing; push: log10 output colour shift per stop pushed; flare: viewing-flare/base floor;
+   sat/hueSat/hueLum: residual per-hue dye response layered after the curves. */
 const STOCKS=[
 {id:"none",hal:0,name:"No Stock",sw:"#222 #111",neutral:true,grain:{size:0.8,rough:0.5,lum:true}},
 {
+  // Portra 400: lowest-contrast, long soft toe and shoulder, restrained saturation, warm skin; fine grain for ISO 400 (Kodak datasheet class)
   id:"portra400",hal:0.12,name:"Portra 400",sw:"#c9906a #e0c4a0",
-  // Shadow: lifted warm. Highlight: clean, slightly cool.
-  shadow:[12,5,-8], mid:[5,1,-5], hi:[3,0,-8],
-  lift:7, contrast:1.04,
-  sat:0.90,
-  // per-hue sat tweaks [red,orange,yellow,green,aqua,blue,purple,magenta]
+  neg:{g:[.63,.65,.68],m:.62,dr:2.7,tw:.46,sw:.36,base:[.2,.45,.8],x:[[1,-.04,0],[-.03,1,-.03],[0,-.05,1]]},
+  warm:[.04,.008,-.04],push:[.008,0,-.012],flare:.0014,sat:1.0,
   hueSat:[1.0,1.08,0.95,0.82,0.88,0.95,1.0,1.1],
-  // per-hue lum [same order]
   hueLum:[1.02,1.04,1.02,0.98,1.0,0.98,1.0,1.02],
-  gammaR:1.00,gammaG:1.02,gammaB:1.10,
-  grain:{size:0.7,rough:0.55,lum:true,colorNoise:0.12}, // subtle color grain
+  grain:{size:0.7,rough:0.55,lum:true,colorNoise:0.12},
 },
 {
+  // Gold 200: consumer neg, higher contrast than Portra, warm/yellow bias, stronger reds/yellows, coarser grain
   id:"gold200",hal:0.15,name:"Kodak Gold 200",sw:"#d4a030 #b85020",
-  shadow:[16,7,-12], mid:[11,4,-10], hi:[14,7,-16],
-  lift:5, contrast:1.14,
-  sat:1.18,
+  neg:{g:[.62,.65,.70],m:.62,dr:2.7,tw:.36,sw:.3,base:[.2,.5,.9],x:[[1,-.07,0],[-.05,1,-.05],[0,-.07,1]]},
+  warm:[.05,.02,-.05],push:[.01,0,-.012],flare:.001,sat:1.08,
   hueSat:[1.1,1.2,1.15,0.92,0.85,0.88,1.0,1.1],
   hueLum:[1.03,1.06,1.06,0.96,0.94,0.97,1.0,1.02],
-  gammaR:0.97,gammaG:1.0,gammaB:1.16,
   grain:{size:0.9,rough:0.65,lum:true,colorNoise:0.18},
 },
 {
+  // Ektar 100: very fine grain, high contrast and saturation (strong interlayer unmasking), short toe, crisp shoulder
   id:"ektar100",hal:0.1,name:"Ektar 100",sw:"#d03030 #206090",
-  shadow:[3,-3,-2], mid:[2,-1,-2], hi:[4,0,-4],
-  lift:2, contrast:1.24,
-  sat:1.38,
-  hueSat:[1.35,1.25,1.2,1.0,1.0,1.05,1.0,1.1],
+  neg:{g:[.68,.69,.70],m:.62,dr:2.7,tw:.25,sw:.24,base:[.2,.45,.8],x:[[1,-.16,-.02],[-.10,1,-.10],[-.02,-.16,1]]},
+  warm:[.016,-.008,-.016],push:[0,-.006,.01],flare:.0004,sat:1.05,
+  hueSat:[1.2,1.15,1.1,1.0,1.0,1.05,1.0,1.05],
   hueLum:[1.0,1.0,1.02,1.0,1.0,0.97,1.0,1.0],
-  gammaR:1.05,gammaG:1.0,gammaB:1.0,
   grain:{size:0.5,rough:0.4,lum:true,colorNoise:0.06},
 },
 {
+  // Pro 400H: low contrast, pastel, cool-green bias (fourth cyan-sensitive layer approximated as G/B crosstalk), lifted floor
   id:"fuji400h",hal:0.1,name:"Fuji 400H",sw:"#8fc8b0 #507860",
-  shadow:[-5,4,7], mid:[-3,3,5], hi:[-2,4,9],
-  lift:13, contrast:0.95,
-  sat:0.85,
+  neg:{g:[.59,.60,.60],m:.62,dr:2.7,tw:.5,sw:.4,base:[.2,.4,.7],x:[[1,-.02,-.02],[-.05,1,-.04],[-.02,-.03,1]]},
+  warm:[-.024,.024,.04],push:[-.012,.004,.01],flare:.0026,sat:0.95,
   hueSat:[0.88,0.90,0.88,1.05,1.1,1.02,0.9,0.88],
   hueLum:[0.98,0.99,0.98,1.03,1.04,1.02,0.98,0.97],
-  gammaR:0.97,gammaG:1.02,gammaB:1.0,
   grain:{size:0.6,rough:0.5,lum:true,colorNoise:0.08},
 },
 {
+  // Tri-X 400: classic punchy B&W, steep mid gradient with long toe, coarse clustered grain (Kodak lists a high RMS for ISO 400)
   id:"trix400",hal:0.15,name:"Tri-X 400",sw:"#383838 #c8c8c8",
-  shadow:[0,0,0], mid:[0,0,0], hi:[0,0,0],
-  lift:4, contrast:1.32, sat:0, mono:true,
-  // Tri-X grain is famous: chunky, fractal-clustered
+  neg:{g:.74,m:.62,dr:2.7,tw:.5,sw:.3},mono:true,
+  warm:[0,0,0],push:[0,0,0],flare:.0008,sat:0,
   grain:{size:1.4,rough:0.85,lum:true,cluster:true,colorNoise:0},
 },
 {
+  // HP5 Plus: a little softer and finer than Tri-X, even tone
   id:"hp5",hal:0.1,name:"Ilford HP5",sw:"#484848 #d8d8d8",
-  shadow:[0,0,0], mid:[0,0,0], hi:[0,0,0],
-  lift:6, contrast:1.18, sat:0, mono:true,
-  // HP5 is finer and more even than Tri-X
+  neg:{g:.68,m:.62,dr:2.7,tw:.46,sw:.34},mono:true,
+  warm:[0,0,0],push:[0,0,0],flare:.0012,sat:0,
   grain:{size:1.1,rough:0.7,lum:true,cluster:false,colorNoise:0},
 },
 {
+  // Instant 600: reversal-like integral print, low contrast, big faded toe and floor, cool shadows, soft muted dyes
   id:"instant600",hal:0,name:"Instant 600",sw:"#c8b890 #506070",
-  shadow:[7,3,11], mid:[6,2,3], hi:[10,5,-5],
-  lift:24, contrast:0.82, sat:0.75,
+  rev:true,neg:{g:[1.0,.98,.94],m:.55,dr:2.6,tw:.6,sw:.34,x:[[1,.05,.03],[.04,1,.04],[.03,.05,1]]},
+  warm:[.05,.016,.024],push:[0,0,0],flare:.005,sat:0.9,
   hueSat:[0.9,0.9,0.88,0.8,0.8,0.85,0.9,0.9],
   hueLum:[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0],
-  gammaR:1.0,gammaG:1.0,gammaB:0.94,
   grain:{size:0.8,rough:0.6,lum:true,colorNoise:0.2},
 },
 {
+  // CineStill 800T: Vision3-class tungsten motion-picture neg (remjet removed): wide latitude, cool/teal bias in daylight, strong halation
   id:"cinestill800t",hal:1,name:"CineStill 800T",sw:"#405090 #c84060",
-  shadow:[-7,-3,12], mid:[-5,0,9], hi:[-8,-2,15],
-  lift:5, contrast:1.16, sat:1.06,
+  neg:{g:[.64,.66,.70],m:.62,dr:2.7,tw:.42,sw:.36,base:[.2,.5,.9],x:[[1,-.05,0],[-.03,1,-.04],[0,-.04,1]]},
+  warm:[-.03,0,.055],push:[-.01,0,.012],flare:.001,sat:1.0,
   hueSat:[1.0,0.95,0.9,0.88,1.0,1.12,1.1,0.95],
   hueLum:[0.98,0.96,0.94,0.95,1.0,1.02,1.0,0.98],
-  gammaR:0.95,gammaG:1.0,gammaB:1.14,
   grain:{size:1.1,rough:0.75,lum:true,colorNoise:0.25},
 },
 {
+  // Velvia 50: saturated slide film, steep gradient, deep blacks, high-saturation greens/reds; almost no grain
   id:"velvia50",hal:0.05,name:"Velvia 50",sw:"#c04040 #204080",
-  shadow:[4,-2,-4], mid:[3,-2,-3], hi:[5,0,-6],
-  lift:0, contrast:1.38, sat:1.55,
-  hueSat:[1.35,1.3,1.4,1.35,1.2,1.25,1.1,1.2],
+  rev:true,neg:{g:[1.5,1.46,1.42],m:.55,dr:3.4,tw:.32,sw:.16,x:[[1,-.2,-.03],[-.12,1,-.12],[-.03,-.2,1]]},
+  warm:[.024,-.016,-.024],push:[.012,-.008,-.008],flare:0,sat:1.0,
+  hueSat:[1.2,1.2,1.25,1.2,1.1,1.15,1.05,1.1],
   hueLum:[0.96,1.0,1.04,1.04,1.0,0.96,0.98,0.96],
-  gammaR:1.06,gammaG:1.0,gammaB:0.98,
-  grain:{size:0.4,rough:0.3,lum:false,colorNoise:0.04}, // slide film: almost no grain
+  grain:{size:0.4,rough:0.3,lum:false,colorNoise:0.04},
 },
 {
+  // Provia 100F: neutral accurate slide film, moderate contrast and saturation
   id:"provia100",hal:0.05,name:"Provia 100F",sw:"#6090c0 #b04030",
-  shadow:[2,1,-2], mid:[1,0,-1], hi:[2,1,-3],
-  lift:2, contrast:1.12, sat:1.08,
+  rev:true,neg:{g:[1.26,1.24,1.22],m:.55,dr:3.2,tw:.36,sw:.2,x:[[1,-.08,-.01],[-.05,1,-.05],[-.01,-.08,1]]},
+  warm:[.008,0,-.008],push:[.005,0,-.01],flare:.0004,sat:1.0,
   hueSat:[1.05,1.05,1.05,1.05,1.05,1.08,1.0,1.0],
   hueLum:[1.0,1.0,1.02,1.02,1.0,1.0,1.0,1.0],
-  gammaR:1.02,gammaG:1.0,gammaB:1.0,
   grain:{size:0.45,rough:0.35,lum:false,colorNoise:0.05},
 },
+];
+// print stage (negative stocks only): same curve model, g gamma, tw/sw = low/high-density ends (= output highlights/shadows), dye = print dye crosstalk (rows normalised)
+const PRINTS=[
+  {id:"2383",name:"Kodak 2383",g:1.9,dr:3.2,m:.5,tw:.14,sw:.34,dye:[[1,-.04,-.01],[-.03,1,-.03],[-.01,-.05,1]]}, // Vision-class print: contrasty, deep blacks, punchy dyes
+  {id:"3513",name:"Fuji 3513",g:1.75,dr:3.0,m:.5,tw:.18,sw:.4,dye:[[1,-.015,0],[-.02,1,-.02],[0,-.02,1]]}, // Eterna-class print: gentler contrast, softer shoulder, cleaner cooler dyes
+  {id:"scan",name:"Neutral scan",g:1.6,dr:3.6,m:.5,tw:.22,sw:.5},
 ];
 
 const HSL_BANDS=[
@@ -441,7 +451,7 @@ function mkAdj(){
     temp:0,tint:0,vibrance:0,saturation:0,
     texture:0,clarity:0,sharpen:0,dehaze:0,
     vignette:0,vigFeather:50,bloom:0,halation:0,fade:0,
-    filmStock:"none",filmStr:100,pushpull:0,dedigi:0,filmBase:0,
+    filmStock:"none",print:"2383",filmStr:100,pushpull:0,dedigi:0,filmBase:0,
     grain:0,grainSize:40,grainRough:60,
     hsl:h,
     curves:{rgb:dc(),r:dc(),g:dc(),b:dc()},
@@ -504,13 +514,13 @@ document.querySelectorAll("input[type=range][data-k]").forEach(sl=>{
   function upd(){
     const v=parseInt(sl.value,10);
     A[key]=v;
-    sl.parentElement.querySelector(".val").textContent=v;
+    sl.parentElement.querySelector(".val").textContent=fmtV(key,v);
     updateSliderBg(sl);
-    updateThumbVal(sl,v);
+    updateThumbVal(sl,fmtV(key,v));
     interact();schedRender(); // grain field is keyed on stock/size/roughness (wantGrain); amount is live
   }
   sl.addEventListener("input",upd);sl.addEventListener("change",release);
-  sl.addEventListener("pointerdown",()=>updateThumbVal(sl,sl.value));
+  sl.addEventListener("pointerdown",()=>updateThumbVal(sl,fmtV(key,sl.value)));
   sl.addEventListener("pointerup",()=>{thumbVal.style.display="none";});
   sl.addEventListener("pointerleave",()=>{thumbVal.style.display="none";});
   updateSliderBg(sl);
@@ -567,10 +577,18 @@ STOCKS.forEach(st=>{
     A.filmStock=st.id;
     document.querySelectorAll(".stockcard").forEach(x=>x.classList.remove("on"));
     card.classList.add("on");
-    schedRender();
+    syncPrint();schedRender();
   });
   stockRail.appendChild(card);
 });
+
+const printRow=document.getElementById("printRow");
+PRINTS.forEach(p=>{const b=document.createElement("button");b.className="pch";b.dataset.id=p.id;b.textContent=p.name;
+  b.addEventListener("click",()=>{A.print=p.id;syncPrint();schedRender();});printRow.appendChild(b);});
+function syncPrint(){const id=getPrint().id,s=getStock();printRow.style.opacity=s.neutral||s.rev?.35:1; // reversal stocks are single-stage: no print
+  document.querySelectorAll(".pch").forEach(x=>x.classList.toggle("on",x.dataset.id===id));}
+syncPrint();
+const fmtV=(k,v)=>k==="pushpull"?(v>0?"+":"")+v/100:v; // push/pull is shown in stops
 
 /* ════ FILE OPEN ════ */
 document.getElementById("emptyEl").addEventListener("click",()=>fileIn.click());
@@ -631,9 +649,9 @@ document.querySelectorAll(".phead-reset").forEach(btn=>{
     if(tab==="hsl"){HSL_BANDS.forEach(b=>A.hsl[b.id]={h:0,s:0,l:0});syncHSL();}
     else if(tab==="curve"){A.curves={rgb:dc(),r:dc(),g:dc(),b:dc()};drawCurve();}
     else if(tab==="film"){
-      A.filmStock="none";A.filmStr=100;A.pushpull=0;A.grain=0;A.grainSize=40;A.grainRough=60;
+      A.filmStock="none";A.print="2383";A.filmStr=100;A.pushpull=0;A.grain=0;A.grainSize=40;A.grainRough=60;
       document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id==="none"));
-      syncAllSliders();
+      syncPrint();syncAllSliders();
     }
     else{RESET_KEYS[tab].forEach(k=>{
       const def={filmStr:100,vigFeather:50,grainSize:40,grainRough:60,filmStock:"none"};
@@ -645,13 +663,13 @@ document.querySelectorAll(".phead-reset").forEach(btn=>{
 document.getElementById("resetBtn").addEventListener("click",()=>{
   A=mkAdj();
   document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id==="none"));
-  syncAllSliders(); syncHSL(); drawCurve(); schedRender();
+  syncPrint();syncAllSliders(); syncHSL(); drawCurve(); schedRender();
 });
 function syncAllSliders(){
   document.querySelectorAll("input[type=range][data-k]").forEach(sl=>{
     const def={filmStr:100,vigFeather:50,grainSize:40,grainRough:60};
     const v=A[sl.dataset.k]!=null?A[sl.dataset.k]:(def[sl.dataset.k]||0);
-    sl.value=v; sl.parentElement.querySelector(".val").textContent=v; updateSliderBg(sl);
+    sl.value=v; sl.parentElement.querySelector(".val").textContent=fmtV(sl.dataset.k,v); updateSliderBg(sl);
   });
   [["h",hslH],["s",hslS],["l",hslL]].forEach(([k,el])=>{
     const v=A.hsl[activeHSL][k];
@@ -766,9 +784,10 @@ document.getElementById("savePresetBtn").addEventListener("click",()=>{
   savePresets();renderPresets();
 });
 function applyPreset(d){
-  A=JSON.parse(JSON.stringify(d));
+  A=Object.assign(mkAdj(),JSON.parse(JSON.stringify(d))); // old presets lack newer fields: defaults fill in
+  A.hsl=Object.assign(mkAdj().hsl,A.hsl);A.curves=Object.assign(mkAdj().curves,A.curves);
   document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id===A.filmStock));
-  syncAllSliders(); syncHSL(); drawCurve(); schedRender();
+  syncPrint();syncAllSliders(); syncHSL(); drawCurve(); schedRender();
 }
 renderPresets();
 
@@ -824,7 +843,7 @@ async function exportFull(){
   const cw=tw<EW?tw-2*ov:EW,ch=th<EH?th-2*ov:EH,nx=Math.ceil(EW/cw),ny=Math.ceil(EH/ch),N=nx*ny;
   glFree(); // live targets are rebuilt afterwards
   const s=mkSet(gl,tw,th,g.F);
-  const gf=A.grain>0?await new Promise(r=>job(1,[tw,th,stock,A.grainSize,A.grainRough,k],r)):null; // one field, reused by every tile
+  const gf=A.grain>0?await new Promise(r=>job(1,[tw,th,stock,A.grainSize,A.grainRough,k,Math.round(A.pushpull/25)/4],r)):null; // one field, reused by every tile
   glLut(L,lutKey);
   const tc=document.createElement("canvas");tc.width=tw;tc.height=th;const tx=tc.getContext("2d");
   const ex=document.createElement("canvas");ex.width=EW;ex.height=EH;const ec=ex.getContext("2d");
@@ -878,11 +897,11 @@ function drawHistogram(src,dd){
    simulation: luminance-modulated, size-
    scaled, with optional organic clustering
 ════════════════════════════════════════════ */
-function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal,k=1){ // k: render scale vs the working resolution
+function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal,k=1,pp=0){ // k: render scale vs the working resolution
   // grainAmt 0-100, grainSizeVal 0-100, grainRoughVal 0-100
   const stockGrain=stock.grain||{size:0.7,rough:0.5,lum:true,colorNoise:0.1};
   const baseSize=stockGrain.size; // stock's native grain size
-  const sizeScale=0.5+grainSizeVal/100*2.5; // user size multiplier
+  const sizeScale=(0.5+grainSizeVal/100*2.5)*Math.pow(1.12,pp); // user size multiplier; push/pull (stops) grows/shrinks the crystals
   const roughness=stockGrain.rough*(0.4+grainRoughVal/100*1.2);
   // intensity NOT stored here — passed live at apply time
 
@@ -1012,6 +1031,8 @@ function cpuRender(L,gf,stock){
 }
 
 function getStock(){return STOCKS.find(s=>s.id===A.filmStock)||STOCKS[0];}
+function getPrint(){return PRINTS.find(s=>s.id===A.print)||PRINTS[0];}
+function pushAmp(){return Math.max(.5,1+.3*A.pushpull/100);} // grain amplitude grows with push
 
 /* ── PIXEL PASS ──
    Scene-referred: 8-bit sRGB -> linear scene (soft highlight headroom up to ~1.27, then exposure/WB/push as linear gains) -> shaper -> 3D LUT.
@@ -1027,7 +1048,7 @@ function shoulder(y){if(y<=SK)return y;return Math.min(1,SK+(1-SK)*SM*(1-Math.ex
 function shoulderInv(x){if(x<=SK)return x;return SK+(1-SK)*-SM*Math.log(1-(x-SK)/(1-SK)/SM);}
 function L1(t,v){const i=v|0,f=v-i;return i>=255?t[255]:t[i]+(t[i+1]-t[i])*f;} // interpolated 256-entry table lookup
 // non-colour keys: changing these must not rebuild the LUT
-const NOCOL=new Set(["exposure","temp","tint","pushpull","texture","clarity","sharpen","dehaze","vignette","vigFeather","bloom","halation","grain","grainSize","grainRough"]);
+const NOCOL=new Set(["exposure","temp","tint","texture","clarity","sharpen","dehaze","vignette","vigFeather","bloom","halation","grain","grainSize","grainRough"]);
 function colorKey(){return JSON.stringify(A,(k,v)=>NOCOL.has(k)?undefined:v);}
 let lut=null,lutKey="";
 // newest finished LUT (may lag `key` by one worker round-trip); kicks a bake when stale. null only before the first bake.
@@ -1038,16 +1059,15 @@ function getLUT(key){
 // linear scene value for every 8-bit code (per channel): exposure (stops), WB and push as gains in linear light. Cached per state.
 let PRE=null;
 function pre(){
-  const k=A.exposure+","+A.temp+","+A.tint+","+A.pushpull;
+  const k=A.exposure+","+A.temp+","+A.tint;
   if(PRE&&PRE.key===k)return PRE;
-  const e=Math.pow(2,A.exposure/50),t=A.temp/100,ti=A.tint/100,p=A.pushpull/100,con=1+p*.3;
-  const gn=[Math.pow(2,t*.4+ti*.1),Math.pow(2,-ti*.3),Math.pow(2,-t*.4+ti*.1)].map(g=>g*e*Math.pow(2,p));
+  const e=Math.pow(2,A.exposure/50),t=A.temp/100,ti=A.tint/100;
+  const gn=[Math.pow(2,t*.4+ti*.1),Math.pow(2,-ti*.3),Math.pow(2,-t*.4+ti*.1)].map(g=>g*e);
   const y=new Float32Array(1024),c=new Float32Array(768);
   for(let i=0;i<256;i++){
     const b=shoulderInv(srgbDec(i/255));
     for(let ch=0;ch<3;ch++){
-      let v=b*gn[ch];
-      if(p)v=v>0?.18*Math.pow(v/.18,con):0;
+      const v=b*gn[ch];
       y[i*4+ch]=v;c[ch*256+i]=Math.max(0,Math.min(LN-1,shEnc(v)*LS));
     }
   }
@@ -1075,8 +1095,8 @@ function buildColorLUT(){
   const rLUT=curveLUT(A.curves.r), gLUT=curveLUT(A.curves.g), bLUT=curveLUT(A.curves.b);
   const useRGB=!isIdentityCurve(A.curves.rgb);
   const useR=!isIdentityCurve(A.curves.r), useG=!isIdentityCurve(A.curves.g), useB=!isIdentityCurve(A.curves.b);
-  let stockLuts=null;
-  if(!stock.neutral) stockLuts=buildStockLUTs(stock);
+  const push=A.pushpull/100,fm=stock.neutral?null:filmModel(stock,getPrint(),push);
+  const gm=1+.12*push,pfog=push>0?.0025*push:0; // no stock: push is a plain gamma + fog around 18% grey
   const vib=A.vibrance/100, sat=A.saturation/100;
   const anyHSL=HSL_BANDS.some(b=>{const v=A.hsl[b.id];return v.h||v.s||v.l;});
   const dedigiAmt=A.dedigi/100;
@@ -1141,15 +1161,14 @@ function buildColorLUT(){
     }
 
     // 7. film stock emulation
-    if(!stock.neutral && stockLuts){
+    if(fm){
       let fr,fg,fb;
       if(stock.mono){
         const lum=0.299*clamp(r)+0.587*clamp(g)+0.114*clamp(b);
         fr=fg=fb=lum;
-      } else {fr=r;fg=g;fb=b;}
-      fr=L1(stockLuts[0],clamp(fr));
-      fg=L1(stockLuts[1],clamp(fg));
-      fb=L1(stockLuts[2],clamp(fb));
+      } else {fr=clamp(r);fg=clamp(g);fb=clamp(b);}
+      [fr,fg,fb]=fm(fr,fg,fb);
+      fr=clamp(fr);fg=clamp(fg);fb=clamp(fb);
 
       // per-hue sat/lum overlay for colour stocks
       if(!stock.mono && stock.hueSat){
@@ -1164,6 +1183,8 @@ function buildColorLUT(){
 
       // blend by strength
       r=r+(fr-r)*fs; g=g+(fg-g)*fs; b=b+(fb-b)*fs;
+    } else if(push){
+      r=255*srgbEnc(.18*Math.pow(srgbDec(clamp(r)/255)/.18,gm)+pfog);g=255*srgbEnc(.18*Math.pow(srgbDec(clamp(g)/255)/.18,gm)+pfog);b=255*srgbEnc(.18*Math.pow(srgbDec(clamp(b)/255)/.18,gm)+pfog);
     }
 
     out[o++]=clamp(r); out[o++]=clamp(g); out[o++]=clamp(b);
@@ -1193,30 +1214,57 @@ function buildToneLUT(){
   return lut;
 }
 
-/* ── STOCK LUTs ── */
-function buildStockLUTs(stock){
-  const lR=new Float32Array(256),lG=new Float32Array(256),lB=new Float32Array(256);
-  for(let i=0;i<256;i++){
-    const t=i/255;
-    const sW=(1-t)*(1-t), hW=t*t;
-    let mW=1-sW-hW; if(mW<0)mW=0;
-    let r=i+stock.shadow[0]*sW+stock.mid[0]*mW+stock.hi[0]*hW;
-    let g=i+stock.shadow[1]*sW+stock.mid[1]*mW+stock.hi[1]*hW;
-    let b=i+stock.shadow[2]*sW+stock.mid[2]*mW+stock.hi[2]*hW;
-    // film lift (raises shadow floor — faded base)
-    const lift=stock.lift*(1-t)*0.38; r+=lift;g+=lift;b+=lift;
-    // stock-level contrast (applied around midpoint)
-    r=(r-128)*stock.contrast+128;
-    g=(g-128)*stock.contrast+128;
-    b=(b-128)*stock.contrast+128;
-    // per-channel gamma (colour temperature of stock)
-    r=255*Math.pow(clamp(r)/255,1/(stock.gammaR||1));
-    g=255*Math.pow(clamp(g)/255,1/(stock.gammaG||1));
-    b=255*Math.pow(clamp(b)/255,1/(stock.gammaB||1));
-    lR[i]=clamp(r);lG[i]=clamp(g);lB[i]=clamp(b);
+/* ── FILM MODEL (see STOCKS/PRINTS) ── */
+const I3=[[1,0,0],[0,1,0],[0,0,1]];
+function sp(x,w){const z=x/w;return z>30?x:w*Math.log(1+Math.exp(z));} // softplus: smooth toe/shoulder
+function dcv(le,g,m,dr,tw,sw){return dr-sp(dr-sp(dr*m+g*le,tw),sw);} // density above base for log10 exposure le (18% grey = 0); slope g in the straight part
+function nrm3(x){return x.map(r=>{const s=r[0]+r[1]+r[2];return[r[0]/s,r[1]/s,r[2]/s];});}
+function mx3(m,d){return[m[0][0]*d[0]+m[0][1]*d[1]+m[0][2]*d[2],m[1][0]*d[0]+m[1][1]*d[1]+m[1][2]*d[2],m[2][0]*d[0]+m[2][1]*d[1]+m[2][2]*d[2]];}
+// push p (stops, <0 = pull) acts inside the negative: gamma up, toe longer/more compressed, shoulder tighter, fog exposure (black lift), stock colour shift.
+// Returns f(r,g,b display codes) -> display codes: negative curves -> crosstalk -> print curves -> dye crosstalk (reversal: curves only). Printer lights are solved per bake so
+// 18% grey lands on 18% (+ the stock's warm/push tint); the orange mask/base is balanced out the same way.
+function filmModel(st,pr,p){
+  const n=st.neg,a3=v=>v.length?v:[v,v,v],G=a3(n.g).map(v=>v*Math.max(.4,1+.14*p)),tw=n.tw*Math.max(.4,1+.3*p),sw=n.sw*Math.max(.5,1-.12*p),
+    base=a3(n.base||0),X=nrm3(n.x||I3),PX=nrm3(pr.dye||I3),fog=p>0?.0025*p:0,rev=!!st.rev,fl=st.flare||0,
+    tg=[0,1,2].map(c=>.18*Math.pow(10,st.warm[c]+st.push[c]*p)),ch=[0,1,2];
+  const ev=(le,L)=>{
+    const D=mx3(X,ch.map(c=>dcv(le[c]+(rev?L[c]:0),G[c],n.m,n.dr,tw,sw)));
+    if(rev)return D.map(d=>Math.pow(10,d-n.dr));
+    return mx3(PX,ch.map(c=>dcv(L[c]-D[c]-base[c],pr.g,pr.m,pr.dr,pr.tw,pr.sw))).map(d=>Math.pow(10,-d));
+  };
+  const L=[0,0,0],le0=[0,0,0];
+  for(let k=0;k<3;k++)for(let c=0;c<3;c++){ // bisect each light; direction (neg: more light = darker, rev: brighter) found from the ends
+    const f=x=>{const l=L.slice();l[c]=x;return Math.log(ev(le0,l)[c]/tg[c]);},s=f(-4)>f(4)?1:-1;
+    let lo=-4,hi=4;for(let i=0;i<34;i++){const m=(lo+hi)/2;f(m)*s>0?lo=m:hi=m;}
+    L[c]=(lo+hi)/2;
   }
-  return[lR,lG,lB];
+  return(r,g,b)=>ev([r,g,b].map(c=>Math.log10(Math.max(1e-5,srgbDec(c/255)+fog)/.18)),L).map(v=>255*srgbEnc(v*(1-fl)+fl));
 }
+// Least-squares fit (Levenberg-Marquardt, numeric Jacobian) of a stock's per-layer gamma, toe, shoulder and grey tint to chart data:
+// pairs=[{i:[r,g,b],o:[r,g,b]}] 8-bit codes in/out of the film stage (push 0, strength 100, no hue overlay). Returns the params to paste into the stock (not applied).
+function grainFitStock(id,pairs,printId){
+  const st=STOCKS.find(s=>s.id===id),pr=PRINTS.find(s=>s.id===printId)||PRINTS[0];
+  if(!st||st.neutral||!pairs||!pairs.length)return null;
+  const n=st.neg,K=8,mk=t=>({...st,neg:{...n,g:t.slice(0,3),tw:t[3],sw:t[4]},warm:t.slice(5)}),
+    res=t=>{const f=filmModel(mk(t),pr,0),r=[];pairs.forEach(q=>{const o=f(...q.i);for(let c=0;c<3;c++)r.push(o[c]-q.o[c]);});return r;},
+    ss=r=>r.reduce((a,v)=>a+v*v,0),lim=t=>t.map((v,i)=>i<3?Math.max(.15,Math.min(3,v)):i<5?Math.max(.03,Math.min(2,v)):Math.max(-.3,Math.min(.3,v)));
+  let t=[...(n.g.length?n.g:[n.g,n.g,n.g]),n.tw,n.sw,...st.warm],r=res(t),e=ss(r),lam=1e-2;
+  for(let it=0;it<80&&lam<1e9;it++){
+    const J=t.map((v,i)=>{const h=i<5?1e-3:1e-4,u=t.slice();u[i]+=h;return res(u).map((x,j)=>(x-r[j])/h);}); // J[i][j]
+    const A=J.map(a=>J.map(b=>a.reduce((s,v,j)=>s+v*b[j],0))),B=J.map(a=>-a.reduce((s,v,j)=>s+v*r[j],0));
+    for(let i=0;i<K;i++)A[i][i]*=1+lam;
+    for(let i=0;i<K;i++){ // gauss elimination with partial pivot
+      let m=i;for(let j=i+1;j<K;j++)if(Math.abs(A[j][i])>Math.abs(A[m][i]))m=j;
+      [A[i],A[m]]=[A[m],A[i]];[B[i],B[m]]=[B[m],B[i]];
+      for(let j=i+1;j<K;j++){const f=A[j][i]/(A[i][i]||1e-12);for(let k=i;k<K;k++)A[j][k]-=f*A[i][k];B[j]-=f*B[i];}
+    }
+    const d=[];for(let i=K-1;i>=0;i--){let s=B[i];for(let k=i+1;k<K;k++)s-=A[i][k]*d[k];d[i]=s/(A[i][i]||1e-12);}
+    const t2=lim(t.map((v,i)=>v+d[i])),r2=res(t2),e2=ss(r2);
+    if(e2<e){const done=e-e2<1e-9*(1+e);t=t2;r=r2;e=e2;lam/=3;if(done)break;}else lam*=4;
+  }
+  return{id,print:pr.id,neg:{g:t.slice(0,3),tw:t[3],sw:t[4]},warm:t.slice(5),rms:Math.sqrt(e/r.length)};
+}
+window.grainFitStock=grainFitStock;
 
 /* ── PER-HUE SATURATION/LUMINANCE OVERLAY ── */
 function applyStockHSL(r,g,b,stock){
@@ -1226,7 +1274,7 @@ function applyStockHSL(r,g,b,stock){
   HSL_BANDS.forEach((band,i)=>{
     let dist=Math.abs(((hd-band.h)+540)%360-180);
     if(dist<40){
-      const w=Math.pow(1-dist/40,1.5);
+      const w=Math.pow(1-dist/40,1.5)*Math.min(1,s*s*30); // fades out for near-greys, whose hue is noise (keeps grey ramps monotonic)
       const sm=stock.hueSat?stock.hueSat[i]:1;
       const lm=stock.hueLum?stock.hueLum[i]:1;
       ns=Math.max(0,Math.min(1,s*((1-w)+w*sm)));
@@ -1284,7 +1332,7 @@ function hslToRgb(h,s,l){
 function applyGrain(d,w,h,grain,grainAmt){
   const {u,roughness,colorNoise,lum}=grain;
   const intensity=(grainAmt||0)/100;
-  const scale=intensity*roughness*90;
+  const scale=intensity*roughness*90*pushAmp();
   for(let p=0;p<d.length;p+=4){
     let r=d[p],g=d[p+1],b=d[p+2];
 
@@ -1397,8 +1445,8 @@ function applyBloom(work,w,h,str){
 ════════════════════════════════════════════ */
 let W=null,wSeq=0,lutBusy=false,grainBusy=false;const WCB={};
 try{
-  W=new Worker(URL.createObjectURL(new Blob([`"use strict";let A;const STOCKS=${JSON.stringify(STOCKS)},HSL_BANDS=${JSON.stringify(HSL_BANDS)},LN=${LN},LS=${LS},SK=${SK},SM=${SM},SL=${SL};
-${[clamp,L1,srgbDec,srgbEnc,shEnc,shDec,shoulder,getStock,buildColorLUT,buildToneLUT,curveLUT,isIdentityCurve,buildStockLUTs,applyStockHSL,applyHSL,rgbToHsl,hslToRgb,buildGrainField].join("\n")}
+  W=new Worker(URL.createObjectURL(new Blob([`"use strict";let A;const STOCKS=${JSON.stringify(STOCKS)},PRINTS=${JSON.stringify(PRINTS)},I3=${JSON.stringify(I3)},HSL_BANDS=${JSON.stringify(HSL_BANDS)},LN=${LN},LS=${LS},SK=${SK},SM=${SM},SL=${SL};
+${[clamp,L1,srgbDec,srgbEnc,shEnc,shDec,shoulder,getStock,getPrint,sp,dcv,nrm3,mx3,filmModel,buildColorLUT,buildToneLUT,curveLUT,isIdentityCurve,applyStockHSL,applyHSL,rgbToHsl,hslToRgb,buildGrainField].join("\n")}
 onmessage=e=>{const[i,t,a]=e.data,r=t?buildGrainField(...a):(A=a,buildColorLUT());postMessage([i,r],[(r.u||r).buffer]);};`],{type:"text/javascript"})));
   W.onmessage=e=>{const[i,r]=e.data,cb=WCB[i];delete WCB[i];if(cb)cb(r);};
   W.onerror=e=>{console.warn("Worker failed, baking on main thread",e.message);W.terminate();W=null;
@@ -1411,10 +1459,10 @@ function job(t,a,cb){
 }
 // grain field for the current stock/size/roughness at w×h; a stale same-size field is returned while the new one builds
 function wantGrain(w,h,stock){
-  const k=[stock.id,A.grainSize,A.grainRough].join(),n=w+"x"+h,f=GS[n];
+  const pq=Math.round(A.pushpull/25)/4,k=[stock.id,A.grainSize,A.grainRough,pq].join(),n=w+"x"+h,f=GS[n];
   if(!(f&&f.key===k)&&!grainBusy){
     grainBusy=true;
-    job(1,[w,h,stock,A.grainSize,A.grainRough,w/srcCanvas.width],r=>{grainBusy=false;r.key=k;GS[n]=r;schedRender();
+    job(1,[w,h,stock,A.grainSize,A.grainRough,w/srcCanvas.width,pq],r=>{grainBusy=false;r.key=k;GS[n]=r;schedRender();
       if(G&&G.prox)wantGrain(G.prox.W,G.prox.Ht,getStock());}); // prefetch the proxy-res field too
   }
   return f||null;
@@ -1594,7 +1642,7 @@ function glPass(gf,stock,s,k,w,h){
   let gs=0,cn=0,lm=0;
   if(gf){
     if(s.gf!==gf){gl.bindTexture(gl.TEXTURE_2D,s.N.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gf.w,gf.h,gl.RGBA,gl.UNSIGNED_BYTE,gf.u);s.gf=gf;}
-    gs=A.grain/100*gf.roughness*90/255;cn=gf.colorNoise||0;lm=gf.lum?1:0;
+    gs=A.grain/100*gf.roughness*90/255*pushAmp();cn=gf.colorNoise||0;lm=gf.lum?1:0;
   }
   const bl=(a,b,dx,dy,sg)=>draw(g.pB,b,[a.t],{d:[dx/a.w,dy/a.h],s:sg,z:0});
   const {am,dh,ha,mb}=fxp(stock);
