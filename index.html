@@ -1,0 +1,1298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="theme-color" content="#0a0908"/>
+<meta name="apple-mobile-web-app-title" content="Grain"/>
+<link rel="manifest" href="manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="icon-180.png"/>
+<link rel="icon" href="icon-192.png"/>
+<title>Grain — Film Editor</title>
+<style>
+:root{
+  --bg:#0a0908;--bg2:#111009;--bg3:#181510;
+  --line:#252019;--line2:#1c1a14;
+  --paper:#ddd5c4;--dim:#7a7060;--dimmer:#3d3828;
+  --amber:#d4803a;--amber2:#8a5020;
+  --red:#b84030;
+  --font:"Courier New",ui-monospace,monospace;
+  --sans:-apple-system,system-ui,sans-serif;
+  --safe-top:env(safe-area-inset-top,0px);
+  --safe-bot:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;margin:0;padding:0;}
+html,body{height:100%;background:var(--bg);overscroll-behavior:none;}
+body{font-family:var(--font);color:var(--paper);padding-top:var(--safe-top);padding-bottom:var(--safe-bot);}
+
+/* ── LAYOUT ── */
+.app{max-width:540px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;}
+
+/* ── HEADER ── */
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 16px;border-bottom:1px solid var(--line);
+  background:var(--bg);
+}
+.wordmark{font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:var(--dim);display:flex;align-items:center;gap:9px;}
+.tally{width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 7px var(--red);animation:pulse 2.4s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.hbtns{display:flex;gap:6px;}
+.hbtn{font-family:var(--font);font-size:10px;letter-spacing:0.08em;text-transform:uppercase;padding:7px 11px;border:1px solid var(--line);background:none;color:var(--dim);cursor:pointer;transition:color .1s,border-color .1s;}
+.hbtn:hover,.hbtn:active{color:var(--paper);border-color:var(--dim);}
+.hbtn.cta{background:var(--amber);color:#140d04;border-color:var(--amber);font-weight:700;}
+.hbtn:disabled{opacity:0.3;pointer-events:none;}
+
+/* ── VIEWER ── */
+.viewer{
+  position:relative;background:#050403;
+  display:flex;align-items:center;justify-content:center;
+  min-height:42vh;max-height:55vh;overflow:hidden;
+}
+#mainCanvas{max-width:100%;max-height:55vh;width:auto;height:auto;display:block;}
+.empty{
+  position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;cursor:pointer;
+}
+.empty .icon{
+  width:56px;height:56px;border:1px solid var(--line);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;color:var(--dimmer);font-size:22px;
+}
+.empty p{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--dimmer);}
+.viewer-badge{
+  position:absolute;top:10px;right:10px;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;
+  background:rgba(0,0,0,.7);color:var(--amber);padding:4px 8px;border:1px solid var(--amber2);
+  display:none;backdrop-filter:blur(4px);
+}
+.viewer-badge.on{display:block;}
+.compare-bar{
+  position:absolute;bottom:0;left:0;right:0;
+  background:linear-gradient(transparent,rgba(0,0,0,.6));
+  padding:10px 14px 8px;display:none;justify-content:space-between;align-items:flex-end;
+}
+.compare-bar.on{display:flex;}
+.compare-hint{font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(255,255,255,.4);}
+.split-label{font-size:9px;letter-spacing:0.06em;color:var(--amber);}
+input[type=file]{display:none;}
+
+/* ── HISTOGRAM ── */
+.hist-wrap{height:36px;background:var(--bg2);border-bottom:1px solid var(--line2);padding:0 16px;}
+#histCanvas{width:100%;height:36px;display:block;}
+
+/* ── TABS ── */
+.tabs{display:flex;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line);background:var(--bg2);}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{
+  flex:0 0 auto;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;
+  padding:11px 15px;background:none;border:none;border-bottom:2px solid transparent;
+  color:var(--dimmer);cursor:pointer;white-space:nowrap;transition:color .15s;
+}
+.tab.on{color:var(--amber);border-bottom-color:var(--amber);}
+
+/* ── PANELS ── */
+.panels{overflow-y:auto;flex:1;}
+.panel{display:none;padding:14px 16px 20px;}
+.panel.on{display:block;}
+
+/* ── ROWS / CONTROLS ── */
+.phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.phead-title{font-size:9px;letter-spacing:0.12em;text-transform:uppercase;color:var(--amber2);}
+.phead-reset{font-size:9px;letter-spacing:0.06em;color:var(--dimmer);background:none;border:none;cursor:pointer;font-family:var(--font);}
+.phead-reset:hover{color:var(--dim);}
+
+.slab{font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--dimmer);margin:14px 0 8px;padding-top:12px;border-top:1px solid var(--line2);}
+.slab:first-child{border-top:none;margin-top:0;padding-top:0;}
+
+.row{display:flex;align-items:center;gap:10px;margin-bottom:9px;}
+.row label{font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--dim);width:76px;flex-shrink:0;}
+.row .val{font-size:10px;color:var(--amber2);width:30px;text-align:right;flex-shrink:0;}
+
+input[type=range]{
+  flex:1;-webkit-appearance:none;appearance:none;height:1px;outline:none;
+  background:linear-gradient(to right,var(--amber) calc(var(--pct,50%)),var(--line) calc(var(--pct,50%)));
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:13px;height:13px;border-radius:50%;
+  background:var(--paper);border:2px solid var(--bg);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.6);
+}
+
+/* ── FILM RAIL ── */
+.rail{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;}
+.rail::-webkit-scrollbar{display:none;}
+.stockcard{
+  flex:0 0 auto;width:70px;display:flex;flex-direction:column;align-items:center;gap:5px;
+  opacity:.45;cursor:pointer;transition:opacity .15s;
+}
+.stockcard.on{opacity:1;}
+.stockcard:active{transform:scale(.95);}
+.swatch-ring{
+  width:46px;height:46px;border-radius:50%;padding:2px;
+  background:conic-gradient(from 0deg,#444,#222);
+  border:1.5px solid transparent;
+}
+.stockcard.on .swatch-ring{border-color:var(--amber);}
+.swatch-inner{width:100%;height:100%;border-radius:50%;}
+.sname{font-size:8px;letter-spacing:0.04em;text-align:center;color:var(--dim);line-height:1.4;}
+.stockcard.on .sname{color:var(--amber);}
+
+/* ── HSL CHIPS ── */
+.hsl-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+.hchip{
+  width:28px;height:28px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+  transition:transform .1s;
+}
+.hchip.on{border-color:rgba(255,255,255,.8);transform:scale(1.1);}
+
+/* ── CURVE ── */
+.curve-ch-row{display:flex;gap:6px;margin-bottom:10px;}
+.cch{font-size:9px;letter-spacing:0.06em;padding:5px 10px;border:1px solid var(--line);background:none;color:var(--dimmer);cursor:pointer;font-family:var(--font);}
+.cch.on{border-color:currentColor;}
+.cch[data-c=rgb].on{color:var(--paper);}
+.cch[data-c=r].on{color:#d84040;}
+.cch[data-c=g].on{color:#50b050;}
+.cch[data-c=b].on{color:#4080d0;}
+#curveCanvas{display:block;border:1px solid var(--line);background:var(--bg3);touch-action:none;cursor:crosshair;width:100%;max-width:300px;}
+.curve-tip{font-size:8px;letter-spacing:0.06em;color:var(--dimmer);margin-top:6px;}
+
+/* ── PRESETS ── */
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+.pcard{border:1px solid var(--line);background:var(--bg3);padding:10px 12px;cursor:pointer;position:relative;}
+.pcard:active{opacity:.7;}
+.pcard-name{font-size:11px;letter-spacing:0.04em;color:var(--paper);margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pcard-meta{font-size:9px;color:var(--dimmer);}
+.pcard-del{position:absolute;top:7px;right:9px;color:var(--dimmer);font-size:13px;background:none;border:none;cursor:pointer;font-family:var(--font);}
+.pempty{font-size:10px;color:var(--dimmer);text-align:center;padding:20px;grid-column:1/-1;}
+.prow{display:flex;gap:8px;}
+.prow input{flex:1;background:var(--bg3);border:1px solid var(--line);color:var(--paper);font-family:var(--font);font-size:11px;padding:9px;outline:none;}
+.prow input:focus{border-color:var(--amber2);}
+
+/* ── SCRUBBER THUMB OVERLAY ── */
+.thumb-val{
+  position:fixed;z-index:99;pointer-events:none;
+  font-size:10px;background:rgba(0,0,0,.8);color:var(--amber);
+  padding:3px 7px;border:1px solid var(--amber2);transform:translate(-50%,-140%);
+  display:none;white-space:nowrap;
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+<header>
+  <div class="wordmark"><span class="tally"></span>GRAIN</div>
+  <div class="hbtns">
+    <button class="hbtn" id="openBtn">Open</button>
+    <button class="hbtn" id="resetBtn" disabled>Reset</button>
+    <button class="hbtn cta" id="exportBtn" disabled>Export</button>
+  </div>
+</header>
+
+<div class="viewer" id="viewer">
+  <canvas id="mainCanvas"></canvas>
+  <div class="empty" id="emptyEl">
+    <div class="icon">◎</div>
+    <p>Tap to load a photo</p>
+  </div>
+  <div class="viewer-badge" id="badge">Rendering…</div>
+  <div class="compare-bar" id="compareBar">
+    <span class="compare-hint">Hold to compare</span>
+    <span class="split-label" id="splitLabel"></span>
+  </div>
+</div>
+<canvas id="histCanvas" style="height:36px;border-bottom:1px solid #1c1a14;"></canvas>
+
+<div class="tabs" id="tabBar">
+  <button class="tab on" data-t="light">Light</button>
+  <button class="tab" data-t="color">Color</button>
+  <button class="tab" data-t="hsl">HSL</button>
+  <button class="tab" data-t="curve">Curve</button>
+  <button class="tab" data-t="detail">Detail</button>
+  <button class="tab" data-t="effects">Effects</button>
+  <button class="tab" data-t="film">Film</button>
+  <button class="tab" data-t="presets">Presets</button>
+</div>
+
+<div class="panels" id="panels">
+
+<!-- LIGHT -->
+<div class="panel on" data-p="light">
+  <div class="phead"><span class="phead-title">Light</span><button class="phead-reset" data-rst="light">Reset</button></div>
+  <div class="row"><label>Exposure</label><input type="range" data-k="exposure" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Contrast</label><input type="range" data-k="contrast" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Highlights</label><input type="range" data-k="highlights" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Shadows</label><input type="range" data-k="shadows" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Whites</label><input type="range" data-k="whites" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Blacks</label><input type="range" data-k="blacks" min="-100" max="100" value="0"><span class="val">0</span></div>
+</div>
+
+<!-- COLOR -->
+<div class="panel" data-p="color">
+  <div class="phead"><span class="phead-title">Color</span><button class="phead-reset" data-rst="color">Reset</button></div>
+  <div class="slab">White Balance</div>
+  <div class="row"><label>Temperature</label><input type="range" data-k="temp" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Tint</label><input type="range" data-k="tint" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="slab">Presence</div>
+  <div class="row"><label>Vibrance</label><input type="range" data-k="vibrance" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Saturation</label><input type="range" data-k="saturation" min="-100" max="100" value="0"><span class="val">0</span></div>
+</div>
+
+<!-- HSL -->
+<div class="panel" data-p="hsl">
+  <div class="phead"><span class="phead-title">HSL / Color Mix</span><button class="phead-reset" data-rst="hsl">Reset</button></div>
+  <div class="hsl-row" id="hslChips"></div>
+  <div class="row"><label>Hue</label><input type="range" id="hslH" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Saturation</label><input type="range" id="hslS" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Luminance</label><input type="range" id="hslL" min="-100" max="100" value="0"><span class="val">0</span></div>
+</div>
+
+<!-- CURVE -->
+<div class="panel" data-p="curve">
+  <div class="phead"><span class="phead-title">Tone Curve</span><button class="phead-reset" data-rst="curve">Reset</button></div>
+  <div class="curve-ch-row" id="curveChs">
+    <button class="cch on" data-c="rgb">RGB</button>
+    <button class="cch" data-c="r">R</button>
+    <button class="cch" data-c="g">G</button>
+    <button class="cch" data-c="b">B</button>
+  </div>
+  <canvas id="curveCanvas" width="300" height="240"></canvas>
+  <p class="curve-tip">Drag points · tap line to add · double-tap to remove</p>
+</div>
+
+<!-- DETAIL -->
+<div class="panel" data-p="detail">
+  <div class="phead"><span class="phead-title">Detail</span><button class="phead-reset" data-rst="detail">Reset</button></div>
+  <div class="slab">Sharpness</div>
+  <div class="row"><label>Texture</label><input type="range" data-k="texture" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Clarity</label><input type="range" data-k="clarity" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Sharpen</label><input type="range" data-k="sharpen" min="0" max="100" value="0"><span class="val">0</span></div>
+  <div class="slab">Noise</div>
+  <div class="row"><label>Dehaze</label><input type="range" data-k="dehaze" min="-100" max="100" value="0"><span class="val">0</span></div>
+</div>
+
+<!-- EFFECTS -->
+<div class="panel" data-p="effects">
+  <div class="phead"><span class="phead-title">Effects</span><button class="phead-reset" data-rst="effects">Reset</button></div>
+  <div class="slab">Vignette</div>
+  <div class="row"><label>Amount</label><input type="range" data-k="vignette" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Feather</label><input type="range" data-k="vigFeather" min="0" max="100" value="50"><span class="val">50</span></div>
+  <div class="slab">Optical</div>
+  <div class="row"><label>Bloom</label><input type="range" data-k="bloom" min="0" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Halation</label><input type="range" data-k="halation" min="0" max="100" value="0"><span class="val">0</span></div>
+  <div class="slab">Fade</div>
+  <div class="row"><label>Amount</label><input type="range" data-k="fade" min="0" max="100" value="0"><span class="val">0</span></div>
+</div>
+
+<!-- FILM -->
+<div class="panel" data-p="film">
+  <div class="phead"><span class="phead-title">Film Stock</span><button class="phead-reset" data-rst="film">Reset</button></div>
+  <div class="rail" id="stockRail"></div>
+  <div class="slab">Emulation Controls</div>
+  <div class="row"><label>Strength</label><input type="range" data-k="filmStr" min="0" max="100" value="100"><span class="val">100</span></div>
+  <div class="row"><label>Push/Pull</label><input type="range" data-k="pushpull" min="-100" max="100" value="0"><span class="val">0</span></div>
+  <div class="slab">Analog Processing</div>
+  <div class="row"><label>De-digital</label><input type="range" data-k="dedigi" min="0" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Film Base</label><input type="range" data-k="filmBase" min="0" max="100" value="0"><span class="val">0</span></div>
+  <div class="slab">Grain Engine</div>
+  <div class="row"><label>Amount</label><input type="range" data-k="grain" min="0" max="100" value="0"><span class="val">0</span></div>
+  <div class="row"><label>Size</label><input type="range" data-k="grainSize" min="0" max="100" value="40"><span class="val">40</span></div>
+  <div class="row"><label>Roughness</label><input type="range" data-k="grainRough" min="0" max="100" value="60"><span class="val">60</span></div>
+</div>
+
+<!-- PRESETS -->
+<div class="panel" data-p="presets">
+  <div class="phead"><span class="phead-title">Presets</span></div>
+  <div class="pgrid" id="presetGrid"></div>
+  <div class="prow">
+    <input type="text" id="presetNameIn" placeholder="Name this look…" maxlength="30">
+    <button class="hbtn cta" id="savePresetBtn">Save</button>
+  </div>
+</div>
+
+</div><!-- /panels -->
+</div><!-- /app -->
+<div class="thumb-val" id="thumbVal"></div>
+<input type="file" id="fileIn" accept="image/*">
+
+<script>
+(()=>{
+"use strict";
+
+/* ════════════════════════════════════════════
+   FILM STOCKS  — richer profiles with
+   per-region hue rotation, sat override per
+   colour family, and grain fingerprints
+════════════════════════════════════════════ */
+const STOCKS=[
+{id:"none",name:"No Stock",sw:"#222 #111",neutral:true,grain:{size:0.8,rough:0.5,lum:true}},
+{
+  id:"portra400",name:"Portra 400",sw:"#c9906a #e0c4a0",
+  // Shadow: lifted warm. Highlight: clean, slightly cool.
+  shadow:[12,5,-8], mid:[5,1,-5], hi:[3,0,-8],
+  lift:7, contrast:1.04,
+  sat:0.90,
+  // per-hue sat tweaks [red,orange,yellow,green,aqua,blue,purple,magenta]
+  hueSat:[1.0,1.08,0.95,0.82,0.88,0.95,1.0,1.1],
+  // per-hue lum [same order]
+  hueLum:[1.02,1.04,1.02,0.98,1.0,0.98,1.0,1.02],
+  gammaR:1.00,gammaG:1.02,gammaB:1.10,
+  grain:{size:0.7,rough:0.55,lum:true,colorNoise:0.12}, // subtle color grain
+},
+{
+  id:"gold200",name:"Kodak Gold 200",sw:"#d4a030 #b85020",
+  shadow:[16,7,-12], mid:[11,4,-10], hi:[14,7,-16],
+  lift:5, contrast:1.14,
+  sat:1.18,
+  hueSat:[1.1,1.2,1.15,0.92,0.85,0.88,1.0,1.1],
+  hueLum:[1.03,1.06,1.06,0.96,0.94,0.97,1.0,1.02],
+  gammaR:0.97,gammaG:1.0,gammaB:1.16,
+  grain:{size:0.9,rough:0.65,lum:true,colorNoise:0.18},
+},
+{
+  id:"ektar100",name:"Ektar 100",sw:"#d03030 #206090",
+  shadow:[3,-3,-2], mid:[2,-1,-2], hi:[4,0,-4],
+  lift:2, contrast:1.24,
+  sat:1.38,
+  hueSat:[1.35,1.25,1.2,1.0,1.0,1.05,1.0,1.1],
+  hueLum:[1.0,1.0,1.02,1.0,1.0,0.97,1.0,1.0],
+  gammaR:1.05,gammaG:1.0,gammaB:1.0,
+  grain:{size:0.5,rough:0.4,lum:true,colorNoise:0.06},
+},
+{
+  id:"fuji400h",name:"Fuji 400H",sw:"#8fc8b0 #507860",
+  shadow:[-5,4,7], mid:[-3,3,5], hi:[-2,4,9],
+  lift:13, contrast:0.95,
+  sat:0.85,
+  hueSat:[0.88,0.90,0.88,1.05,1.1,1.02,0.9,0.88],
+  hueLum:[0.98,0.99,0.98,1.03,1.04,1.02,0.98,0.97],
+  gammaR:0.97,gammaG:1.02,gammaB:1.0,
+  grain:{size:0.6,rough:0.5,lum:true,colorNoise:0.08},
+},
+{
+  id:"trix400",name:"Tri-X 400",sw:"#383838 #c8c8c8",
+  shadow:[0,0,0], mid:[0,0,0], hi:[0,0,0],
+  lift:4, contrast:1.32, sat:0, mono:true,
+  // Tri-X grain is famous: chunky, fractal-clustered
+  grain:{size:1.4,rough:0.85,lum:true,cluster:true,colorNoise:0},
+},
+{
+  id:"hp5",name:"Ilford HP5",sw:"#484848 #d8d8d8",
+  shadow:[0,0,0], mid:[0,0,0], hi:[0,0,0],
+  lift:6, contrast:1.18, sat:0, mono:true,
+  // HP5 is finer and more even than Tri-X
+  grain:{size:1.1,rough:0.7,lum:true,cluster:false,colorNoise:0},
+},
+{
+  id:"instant600",name:"Instant 600",sw:"#c8b890 #506070",
+  shadow:[7,3,11], mid:[6,2,3], hi:[10,5,-5],
+  lift:24, contrast:0.82, sat:0.75,
+  hueSat:[0.9,0.9,0.88,0.8,0.8,0.85,0.9,0.9],
+  hueLum:[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0],
+  gammaR:1.0,gammaG:1.0,gammaB:0.94,
+  grain:{size:0.8,rough:0.6,lum:true,colorNoise:0.2},
+},
+{
+  id:"cinestill800t",name:"CineStill 800T",sw:"#405090 #c84060",
+  shadow:[-7,-3,12], mid:[-5,0,9], hi:[-8,-2,15],
+  lift:5, contrast:1.16, sat:1.06,
+  hueSat:[1.0,0.95,0.9,0.88,1.0,1.12,1.1,0.95],
+  hueLum:[0.98,0.96,0.94,0.95,1.0,1.02,1.0,0.98],
+  gammaR:0.95,gammaG:1.0,gammaB:1.14,
+  grain:{size:1.1,rough:0.75,lum:true,colorNoise:0.25,halation:true},
+},
+{
+  id:"velvia50",name:"Velvia 50",sw:"#c04040 #204080",
+  shadow:[4,-2,-4], mid:[3,-2,-3], hi:[5,0,-6],
+  lift:0, contrast:1.38, sat:1.55,
+  hueSat:[1.35,1.3,1.4,1.35,1.2,1.25,1.1,1.2],
+  hueLum:[0.96,1.0,1.04,1.04,1.0,0.96,0.98,0.96],
+  gammaR:1.06,gammaG:1.0,gammaB:0.98,
+  grain:{size:0.4,rough:0.3,lum:false,colorNoise:0.04}, // slide film: almost no grain
+},
+{
+  id:"provia100",name:"Provia 100F",sw:"#6090c0 #b04030",
+  shadow:[2,1,-2], mid:[1,0,-1], hi:[2,1,-3],
+  lift:2, contrast:1.12, sat:1.08,
+  hueSat:[1.05,1.05,1.05,1.05,1.05,1.08,1.0,1.0],
+  hueLum:[1.0,1.0,1.02,1.02,1.0,1.0,1.0,1.0],
+  gammaR:1.02,gammaG:1.0,gammaB:1.0,
+  grain:{size:0.45,rough:0.35,lum:false,colorNoise:0.05},
+},
+];
+
+const HSL_BANDS=[
+  {id:"red",   h:0,   c:"#d04040"},
+  {id:"orange",h:28,  c:"#d07030"},
+  {id:"yellow",h:55,  c:"#c8a020"},
+  {id:"green", h:120, c:"#40a040"},
+  {id:"aqua",  h:178, c:"#30a8a0"},
+  {id:"blue",  h:220, c:"#4070d0"},
+  {id:"purple",h:272, c:"#8050c0"},
+  {id:"magenta",h:320,c:"#c040a0"},
+];
+
+/* ════ STATE ════ */
+function mkAdj(){
+  const h={};
+  HSL_BANDS.forEach(b=>h[b.id]={h:0,s:0,l:0});
+  return{
+    exposure:0,contrast:0,highlights:0,shadows:0,whites:0,blacks:0,
+    temp:0,tint:0,vibrance:0,saturation:0,
+    texture:0,clarity:0,sharpen:0,dehaze:0,
+    vignette:0,vigFeather:50,bloom:0,halation:0,fade:0,
+    filmStock:"none",filmStr:100,pushpull:0,dedigi:0,filmBase:0,
+    grain:0,grainSize:40,grainRough:60,
+    hsl:h,
+    curves:{rgb:dc(),r:dc(),g:dc(),b:dc()},
+  };
+}
+function dc(){return[{x:0,y:0},{x:255,y:255}];}
+
+let A=mkAdj();
+let srcCanvas=document.createElement("canvas");
+let hasImg=false;
+let activeHSL="orange";
+let activeCurve="rgb";
+let grainSeeds=null; // typed array cache for grain
+let PRESETS=[];
+try{PRESETS=JSON.parse(localStorage.getItem("grain.presets")||"[]");}catch(e){}
+function savePresets(){try{localStorage.setItem("grain.presets",JSON.stringify(PRESETS));}catch(e){}}
+
+/* ════ ELEMENTS ════ */
+const mainCanvas=document.getElementById("mainCanvas");
+const mctx=mainCanvas.getContext("2d",{willReadFrequently:true});
+const histCanvas=document.getElementById("histCanvas");
+const hctx=histCanvas.getContext("2d");
+const curveCanvas=document.getElementById("curveCanvas");
+const cctx=curveCanvas.getContext("2d");
+const fileIn=document.getElementById("fileIn");
+const badge=document.getElementById("badge");
+const compareBar=document.getElementById("compareBar");
+const splitLabel=document.getElementById("splitLabel");
+const thumbVal=document.getElementById("thumbVal");
+
+/* ════ TABS ════ */
+document.getElementById("tabBar").addEventListener("click",e=>{
+  const t=e.target.closest(".tab");if(!t)return;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("on"));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("on"));
+  t.classList.add("on");
+  document.querySelector(`.panel[data-p="${t.dataset.t}"]`).classList.add("on");
+  if(t.dataset.t==="curve")drawCurve();
+  if(t.dataset.t==="presets")renderPresets();
+});
+
+/* ════ SLIDERS ════ */
+function updateThumbVal(sl,v){
+  const r=sl.getBoundingClientRect();
+  thumbVal.style.display="block";
+  thumbVal.style.left=(r.left+r.width/2)+"px";
+  thumbVal.style.top=(r.top+window.scrollY)+"px";
+  thumbVal.textContent=v;
+}
+document.querySelectorAll("input[type=range][data-k]").forEach(sl=>{
+  const key=sl.dataset.k;
+  function upd(){
+    const v=parseInt(sl.value,10);
+    A[key]=v;
+    sl.parentElement.querySelector(".val").textContent=v;
+    updateSliderBg(sl);
+    updateThumbVal(sl,v);
+    if(key==="grain"||key==="grainSize"||key==="grainRough") grainSeeds=null;
+    schedRender();
+  }
+  sl.addEventListener("input",upd);
+  sl.addEventListener("pointerdown",()=>updateThumbVal(sl,sl.value));
+  sl.addEventListener("pointerup",()=>{thumbVal.style.display="none";});
+  sl.addEventListener("pointerleave",()=>{thumbVal.style.display="none";});
+  updateSliderBg(sl);
+});
+function updateSliderBg(sl){
+  const min=+sl.min,max=+sl.max,val=+sl.value;
+  const pct=((val-min)/(max-min)*100).toFixed(1)+"%";
+  sl.style.setProperty("--pct",pct);
+}
+
+/* ════ HSL ════ */
+const hslChips=document.getElementById("hslChips");
+const hslH=document.getElementById("hslH"),hslS=document.getElementById("hslS"),hslL=document.getElementById("hslL");
+HSL_BANDS.forEach(b=>{
+  const c=document.createElement("div");
+  c.className="hchip"+(b.id===activeHSL?" on":"");
+  c.style.background=b.c; c.title=b.id;
+  c.addEventListener("click",()=>{
+    activeHSL=b.id;
+    document.querySelectorAll(".hchip").forEach(x=>x.classList.remove("on"));
+    c.classList.add("on");
+    syncHSL();
+  });
+  hslChips.appendChild(c);
+});
+function syncHSL(){
+  const v=A.hsl[activeHSL];
+  [["h",hslH],["s",hslS],["l",hslL]].forEach(([k,el])=>{
+    el.value=v[k]; el.parentElement.querySelector(".val").textContent=v[k]; updateSliderBg(el);
+  });
+}
+[["h",hslH],["s",hslS],["l",hslL]].forEach(([k,el])=>{
+  el.addEventListener("input",()=>{
+    const v=parseInt(el.value,10);
+    A.hsl[activeHSL][k]=v;
+    el.parentElement.querySelector(".val").textContent=v; updateSliderBg(el);
+    schedRender();
+  });
+});
+syncHSL();
+
+/* ════ FILM RAIL ════ */
+const stockRail=document.getElementById("stockRail");
+STOCKS.forEach(st=>{
+  const card=document.createElement("div");
+  card.className="stockcard"+(st.id==="none"?" on":"");
+  card.dataset.id=st.id;
+  const [c1,c2]=st.sw.split(" ");
+  card.innerHTML=`<div class="swatch-ring" style="background:linear-gradient(135deg,${c1},${c2})">
+    <div class="swatch-inner" style="background:linear-gradient(135deg,${c1},${c2})"></div></div>
+    <div class="sname">${st.name}</div>`;
+  card.addEventListener("click",()=>{
+    A.filmStock=st.id;
+    document.querySelectorAll(".stockcard").forEach(x=>x.classList.remove("on"));
+    card.classList.add("on");
+    // seed new grain for this stock
+    grainSeeds=null;
+    schedRender();
+  });
+  stockRail.appendChild(card);
+});
+
+/* ════ FILE OPEN ════ */
+document.getElementById("emptyEl").addEventListener("click",()=>fileIn.click());
+document.getElementById("openBtn").addEventListener("click",()=>fileIn.click());
+fileIn.addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const fr=new FileReader();
+  fr.onload=ev=>{
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=1600;
+      let w=img.naturalWidth,h=img.naturalHeight;
+      const sc=Math.min(1,MAX/Math.max(w,h));
+      srcCanvas.width=Math.round(w*sc); srcCanvas.height=Math.round(h*sc);
+      srcCanvas.getContext("2d").drawImage(img,0,0,srcCanvas.width,srcCanvas.height);
+      hasImg=true;grainSeeds=null;
+      document.getElementById("emptyEl").style.display="none";
+      compareBar.classList.add("on");
+      document.getElementById("exportBtn").disabled=false;
+      document.getElementById("resetBtn").disabled=false;
+      schedRender();
+    };
+    img.src=ev.target.result;
+  };
+  fr.readAsDataURL(f);
+});
+
+/* ════ COMPARE ════ */
+let comparing=false;
+mainCanvas.addEventListener("pointerdown",()=>{if(!hasImg)return;comparing=true;showOrig();splitLabel.textContent="ORIGINAL";});
+["pointerup","pointerleave","pointercancel"].forEach(ev=>mainCanvas.addEventListener(ev,()=>{if(comparing){comparing=false;schedRender();}splitLabel.textContent="";}));
+function showOrig(){
+  mainCanvas.width=srcCanvas.width; mainCanvas.height=srcCanvas.height;
+  mctx.drawImage(srcCanvas,0,0);
+  drawHistogram(srcCanvas);
+}
+
+/* ════ RESET ════ */
+const RESET_KEYS={
+  light:["exposure","contrast","highlights","shadows","whites","blacks"],
+  color:["temp","tint","vibrance","saturation"],
+  detail:["texture","clarity","sharpen","dehaze"],
+  effects:["vignette","vigFeather","bloom","halation","fade"],
+  film:["filmStock","filmStr","pushpull","dedigi","filmBase","grain","grainSize","grainRough"],
+};
+document.querySelectorAll(".phead-reset").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    const tab=btn.dataset.rst;
+    if(tab==="hsl"){HSL_BANDS.forEach(b=>A.hsl[b.id]={h:0,s:0,l:0});syncHSL();}
+    else if(tab==="curve"){A.curves={rgb:dc(),r:dc(),g:dc(),b:dc()};drawCurve();}
+    else if(tab==="film"){
+      A.filmStock="none";A.filmStr=100;A.pushpull=0;A.grain=0;A.grainSize=40;A.grainRough=60;
+      document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id==="none"));
+      grainSeeds=null; syncAllSliders();
+    }
+    else{RESET_KEYS[tab].forEach(k=>{
+      const def={filmStr:100,vigFeather:50,grainSize:40,grainRough:60,filmStock:"none"};
+      A[k]=def[k]!==undefined?def[k]:0;
+    }); syncAllSliders();}
+    schedRender();
+  });
+});
+document.getElementById("resetBtn").addEventListener("click",()=>{
+  A=mkAdj(); grainSeeds=null;
+  document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id==="none"));
+  syncAllSliders(); syncHSL(); drawCurve(); schedRender();
+});
+function syncAllSliders(){
+  document.querySelectorAll("input[type=range][data-k]").forEach(sl=>{
+    const def={filmStr:100,vigFeather:50,grainSize:40,grainRough:60};
+    const v=A[sl.dataset.k]!=null?A[sl.dataset.k]:(def[sl.dataset.k]||0);
+    sl.value=v; sl.parentElement.querySelector(".val").textContent=v; updateSliderBg(sl);
+  });
+  [["h",hslH],["s",hslS],["l",hslL]].forEach(([k,el])=>{
+    const v=A.hsl[activeHSL][k];
+    el.value=v; el.parentElement.querySelector(".val").textContent=v; updateSliderBg(el);
+  });
+}
+
+/* ════════════════════════════════════════════
+   CURVE EDITOR
+════════════════════════════════════════════ */
+const CW=300,CH=240;
+document.getElementById("curveChs").addEventListener("click",e=>{
+  const b=e.target.closest(".cch");if(!b)return;
+  activeCurve=b.dataset.c;
+  document.querySelectorAll(".cch").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on"); drawCurve();
+});
+function chColor(){return{rgb:"#ddd5c4",r:"#d84040",g:"#50b050",b:"#4080d0"}[activeCurve];}
+function drawCurve(){
+  const W=curveCanvas.width,H=curveCanvas.height;
+  cctx.clearRect(0,0,W,H);
+  // grid
+  cctx.strokeStyle="#1c1a14"; cctx.lineWidth=1;
+  for(let i=1;i<4;i++){const p=i/4;cctx.beginPath();cctx.moveTo(p*W,0);cctx.lineTo(p*W,H);cctx.moveTo(0,p*H);cctx.lineTo(W,p*H);cctx.stroke();}
+  // diagonal ref
+  cctx.strokeStyle="#252019"; cctx.beginPath();cctx.moveTo(0,H);cctx.lineTo(W,0);cctx.stroke();
+  const pts=A.curves[activeCurve];
+  const lut=curveLUT(pts);
+  // curve line
+  cctx.strokeStyle=chColor(); cctx.lineWidth=1.5; cctx.beginPath();
+  for(let i=0;i<256;i++){const x=i/255*W,y=H-(lut[i]/255*H);i===0?cctx.moveTo(x,y):cctx.lineTo(x,y);}
+  cctx.stroke();
+  // control points
+  pts.forEach(p=>{
+    const px=p.x/255*W,py=H-(p.y/255*H);
+    cctx.beginPath(); cctx.arc(px,py,5,0,7);
+    cctx.fillStyle=chColor(); cctx.fill();
+    cctx.beginPath(); cctx.arc(px,py,5,0,7);
+    cctx.strokeStyle=var_bg; cctx.lineWidth=1.5; cctx.stroke();
+  });
+}
+const var_bg="#0a0908";
+let dragPt=-1,lastTap=0;
+curveCanvas.addEventListener("pointerdown",e=>{
+  const r=curveCanvas.getBoundingClientRect();
+  const sx=curveCanvas.width/r.width, sy=curveCanvas.height/r.height;
+  const cx=(e.clientX-r.left)*sx, cy=(e.clientY-r.top)*sy;
+  const mx=cx/curveCanvas.width*255, my=255-(cy/curveCanvas.height*255);
+  const pts=A.curves[activeCurve];
+  let hit=-1;
+  pts.forEach((p,i)=>{const dx=p.x/255*curveCanvas.width-cx,dy=(255-p.y)/255*curveCanvas.height-cy;if(Math.hypot(dx,dy)<16)hit=i;});
+  const now=Date.now();
+  if(hit>=0 && now-lastTap<300 && hit>0 && hit<pts.length-1){pts.splice(hit,1);lastTap=0;drawCurve();schedRender();return;}
+  lastTap=now;
+  if(hit<0){
+    const newPt={x:Math.max(0,Math.min(255,mx)),y:Math.max(0,Math.min(255,my))};
+    pts.push(newPt); pts.sort((a,b)=>a.x-b.x);
+    hit=pts.findIndex(p=>Math.abs(p.x-newPt.x)<1);
+  }
+  dragPt=hit; curveCanvas.setPointerCapture(e.pointerId);
+});
+curveCanvas.addEventListener("pointermove",e=>{
+  if(dragPt<0)return;
+  const r=curveCanvas.getBoundingClientRect();
+  const sx=curveCanvas.width/r.width, sy=curveCanvas.height/r.height;
+  const cx=(e.clientX-r.left)*sx, cy=(e.clientY-r.top)*sy;
+  let mx=cx/curveCanvas.width*255, my=255-cy/curveCanvas.height*255;
+  const pts=A.curves[activeCurve];
+  my=Math.max(0,Math.min(255,my));
+  if(dragPt===0)mx=0; else if(dragPt===pts.length-1)mx=255;
+  else mx=Math.max(pts[dragPt-1].x+2,Math.min(pts[dragPt+1].x-2,mx));
+  pts[dragPt]={x:mx,y:my}; drawCurve(); schedRender();
+});
+["pointerup","pointercancel"].forEach(ev=>curveCanvas.addEventListener(ev,()=>dragPt=-1));
+
+function curveLUT(pts){
+  const lut=new Float32Array(256);
+  const p=[...pts].sort((a,b)=>a.x-b.x);
+  for(let i=0;i<p.length-1;i++){
+    const a=p[i],b=p[i+1];
+    for(let x=Math.ceil(a.x);x<=Math.ceil(b.x);x++){
+      const t=(x-a.x)/Math.max(1,b.x-a.x);
+      lut[Math.min(255,x)]=a.y+(b.y-a.y)*(t*t*(3-2*t));
+    }
+  }
+  for(let x=0;x<Math.floor(p[0].x);x++)lut[x]=p[0].y;
+  for(let x=Math.ceil(p[p.length-1].x);x<256;x++)lut[x]=p[p.length-1].y;
+  return lut;
+}
+function isIdentityCurve(pts){return pts.length===2&&pts[0].x===0&&pts[0].y===0&&pts[1].x===255&&pts[1].y===255;}
+
+/* ════════════════════════════════════════════
+   PRESETS
+════════════════════════════════════════════ */
+function renderPresets(){
+  const g=document.getElementById("presetGrid"); g.innerHTML="";
+  if(!PRESETS.length){g.innerHTML='<div class="pempty">No presets yet.<br>Dial in a look and save it.</div>';return;}
+  PRESETS.forEach((pr,i)=>{
+    const d=document.createElement("div"); d.className="pcard";
+    const st=STOCKS.find(s=>s.id===pr.data.filmStock)||STOCKS[0];
+    d.innerHTML=`<div class="pcard-name"></div><div class="pcard-meta">${st.name}</div><button class="pcard-del">×</button>`;
+    d.querySelector(".pcard-name").textContent=pr.name;
+    d.querySelector(".pcard-del").addEventListener("click",e=>{e.stopPropagation();PRESETS.splice(i,1);savePresets();renderPresets();});
+    d.addEventListener("click",()=>{applyPreset(pr.data);});
+    g.appendChild(d);
+  });
+}
+document.getElementById("savePresetBtn").addEventListener("click",()=>{
+  const n=(document.getElementById("presetNameIn").value||"Untitled").trim();
+  PRESETS.push({name:n,data:JSON.parse(JSON.stringify(A))});
+  document.getElementById("presetNameIn").value="";
+  savePresets();renderPresets();
+});
+function applyPreset(d){
+  A=JSON.parse(JSON.stringify(d)); grainSeeds=null;
+  document.querySelectorAll(".stockcard").forEach(x=>x.classList.toggle("on",x.dataset.id===A.filmStock));
+  syncAllSliders(); syncHSL(); drawCurve(); schedRender();
+}
+renderPresets();
+
+/* ════════════════════════════════════════════
+   EXPORT
+════════════════════════════════════════════ */
+document.getElementById("exportBtn").addEventListener("click",()=>{
+  if(!hasImg)return;
+  try{
+    mainCanvas.toBlob(blob=>{
+      if(!blob){fallbackExport();return;}
+      try{
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement("a"); a.href=url;
+        a.download="grain-"+Date.now()+".jpg";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(()=>URL.revokeObjectURL(url),4000);
+      }catch{fallbackExport();}
+    },"image/jpeg",0.93);
+  }catch{fallbackExport();}
+});
+function fallbackExport(){
+  try{
+    const w=window.open();
+    if(w){w.document.write(`<html><body style="margin:0;background:#000"><img src="${mainCanvas.toDataURL("image/jpeg",0.93)}" style="max-width:100%;display:block"></body></html>`);w.document.close();}
+    else{badge.textContent="Allow popups or long-press image to save";badge.classList.add("on");setTimeout(()=>{badge.classList.remove("on");badge.textContent="Rendering…";},3500);}
+  }catch(e){console.error(e);}
+}
+
+/* ════════════════════════════════════════════
+   HISTOGRAM
+════════════════════════════════════════════ */
+function drawHistogram(src){
+  const W=histCanvas.width=histCanvas.offsetWidth||300;
+  const H=histCanvas.height=36;
+  const sc=src.getContext("2d");
+  const id=sc.getImageData(0,0,src.width,src.height);
+  const d=id.data;
+  const rh=new Uint32Array(256),gh=new Uint32Array(256),bh=new Uint32Array(256);
+  for(let p=0;p<d.length;p+=4){rh[d[p]]++;gh[d[p+1]]++;bh[d[p+2]]++;}
+  const mx=Math.max(...rh,...gh,...bh)||1;
+  hctx.clearRect(0,0,W,H);
+  const drawCh=(arr,col)=>{
+    hctx.beginPath();
+    hctx.moveTo(0,H);
+    for(let i=0;i<256;i++){hctx.lineTo(i/255*W,H-(arr[i]/mx*(H-4)));}
+    hctx.lineTo(W,H); hctx.closePath();
+    hctx.fillStyle=col; hctx.fill();
+  };
+  drawCh(rh,"rgba(200,60,60,0.4)");
+  drawCh(gh,"rgba(60,170,60,0.4)");
+  drawCh(bh,"rgba(60,100,200,0.4)");
+}
+
+/* ════════════════════════════════════════════
+   GRAIN ENGINE
+   Per-channel independent silver-halide
+   simulation: luminance-modulated, size-
+   scaled, with optional organic clustering
+════════════════════════════════════════════ */
+function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal){
+  // grainAmt 0-100, grainSizeVal 0-100, grainRoughVal 0-100
+  const stockGrain=stock.grain||{size:0.7,rough:0.5,lum:true,colorNoise:0.1};
+  const baseSize=stockGrain.size; // stock's native grain size
+  const sizeScale=0.5+grainSizeVal/100*2.5; // user size multiplier
+  const roughness=stockGrain.rough*(0.4+grainRoughVal/100*1.2);
+  // intensity NOT stored here — passed live at apply time
+
+  // Each grain field is per-channel (R,G,B have different crystal sizes in real film)
+  // B layer is typically finest, R is coarsest for most stocks
+  const layerScales=[1.0, 0.88, 0.72]; // R, G, B size ratios
+  const colorNoise=stockGrain.colorNoise||0;
+
+  // generate 3 independent noise fields in a single flat buffer
+  // We use a seeded LCG so grain stays consistent until stock changes
+  // but is still random per channel
+  const total=w*h;
+  const rField=new Float32Array(total);
+  const gField=new Float32Array(total);
+  const bField=new Float32Array(total);
+
+  const cluster=stockGrain.cluster;
+
+  function noise2d(field,layerScale){
+    const cellSize=Math.max(1, Math.round(baseSize*sizeScale*layerScale*3));
+    // fill with raw uniform noise first
+    for(let i=0;i<total;i++) field[i]=Math.random()-0.5;
+
+    if(cellSize<=1) return; // skip blur for very fine grain
+
+    // box blur approximation for grain spreading (cheap gaussian)
+    const passes= cluster ? 3 : 1;
+    const tmp=new Float32Array(total);
+    for(let pass=0;pass<passes;pass++){
+      const r=Math.max(1,Math.round(cellSize*(pass===0?1:0.5)));
+      // horizontal
+      for(let y=0;y<h;y++){
+        let sum=0,cnt=0;
+        for(let x=0;x<r;x++){sum+=field[y*w+x];cnt++;}
+        for(let x=0;x<w;x++){
+          if(x+r<w){sum+=field[y*w+x+r];cnt++;}
+          if(x-r>=0){sum-=field[y*w+x-r-1];cnt--;}
+          tmp[y*w+x]=cnt?sum/cnt:0;
+        }
+      }
+      // vertical
+      for(let x=0;x<w;x++){
+        let sum=0,cnt=0;
+        for(let y=0;y<r;y++){sum+=tmp[y*w+x];cnt++;}
+        for(let y=0;y<h;y++){
+          if(y+r<h){sum+=tmp[(y+r)*w+x];cnt++;}
+          if(y-r>=0){sum-=tmp[(y-r-1)*w+x];cnt--;}
+          field[y*w+x]=cnt?sum/cnt:0;
+        }
+      }
+    }
+    // renormalize
+    let mn=Infinity,mx=-Infinity;
+    for(let i=0;i<total;i++){if(field[i]<mn)mn=field[i];if(field[i]>mx)mx=field[i];}
+    const range=mx-mn||1;
+    for(let i=0;i<total;i++) field[i]=(field[i]-mn)/range-0.5;
+  }
+
+  noise2d(rField, layerScales[0]);
+  noise2d(gField, layerScales[1]);
+  noise2d(bField, layerScales[2]);
+
+  return {rField,gField,bField,roughness,colorNoise,lum:stockGrain.lum};
+}
+
+/* ════════════════════════════════════════════
+   RENDER PIPELINE
+════════════════════════════════════════════ */
+let queued=false;
+function schedRender(){
+  if(!hasImg||comparing)return;
+  if(queued)return;
+  queued=true; badge.classList.add("on");
+  requestAnimationFrame(()=>{doRender();queued=false;badge.classList.remove("on");});
+}
+
+function clamp(v){return v<0?0:v>255?255:v;}
+
+function doRender(){
+  const sw=srcCanvas.width,sh=srcCanvas.height;
+  mainCanvas.width=sw; mainCanvas.height=sh;
+
+  // working canvas
+  const work=document.createElement("canvas"); work.width=sw; work.height=sh;
+  const wctx=work.getContext("2d"); wctx.drawImage(srcCanvas,0,0);
+
+  const id=wctx.getImageData(0,0,sw,sh);
+  const d=id.data;
+
+  // pixel pipeline
+  pixelPass(d,sw,sh);
+
+  id.data.set(d);
+  wctx.putImageData(id,0,0);
+
+  // grain overlay (after tone, before spatial)
+  const stock=getStock();
+  if(A.grain>0){
+    if(!grainSeeds){
+      grainSeeds=buildGrainField(sw,sh,stock,A.grainSize,A.grainRough);
+    }
+    applyGrain(d,sw,sh,grainSeeds,A.grain);
+    id.data.set(d);
+    wctx.putImageData(id,0,0);
+  }
+
+  // spatial
+  const spatialOut=spatialPass(work,sw,sh);
+  mctx.clearRect(0,0,sw,sh);
+  mctx.putImageData(spatialOut,0,0);
+
+  // optical effects
+  const vigAmt=A.vignette/100, vigF=A.vigFeather/100;
+  if(vigAmt!==0) applyVignette(sw,sh,vigAmt,vigF);
+  const halTotal=A.halation/100+(stock.grain&&stock.grain.halation?0.3*(A.filmStr/100):0);
+  if(halTotal>0) applyHalation(work,sw,sh,halTotal);
+  if(A.bloom>0) applyBloom(work,sw,sh,A.bloom/100);
+
+  drawHistogram(mainCanvas);
+}
+
+function getStock(){return STOCKS.find(s=>s.id===A.filmStock)||STOCKS[0];}
+
+/* ── PIXEL PASS ── */
+function pixelPass(d,w,h){
+  const stock=getStock();
+  const fs=A.filmStr/100;
+  const push=A.pushpull/100;
+
+  // build LUTs
+  const toneLUT=buildToneLUT();
+  const rgbLUT=curveLUT(A.curves.rgb);
+  const rLUT=curveLUT(A.curves.r), gLUT=curveLUT(A.curves.g), bLUT=curveLUT(A.curves.b);
+  const useRGB=!isIdentityCurve(A.curves.rgb);
+  const useR=!isIdentityCurve(A.curves.r), useG=!isIdentityCurve(A.curves.g), useB=!isIdentityCurve(A.curves.b);
+  let stockLuts=null;
+  if(!stock.neutral) stockLuts=buildStockLUTs(stock);
+
+  const temp=A.temp, tint=A.tint, vib=A.vibrance/100, sat=A.saturation/100;
+  const anyHSL=HSL_BANDS.some(b=>{const v=A.hsl[b.id];return v.h||v.s||v.l;});
+
+  // analog pre-pass: undo digital photography over-processing
+  const dedigiAmt=A.dedigi/100;
+  const filmBaseAmt=A.filmBase/100;
+  if(dedigiAmt>0||filmBaseAmt>0){
+    for(let p=0;p<d.length;p+=4){
+      let r=d[p],g=d[p+1],b=d[p+2];
+      if(dedigiAmt>0){
+        const lum=(0.299*r+0.587*g+0.114*b)/255;
+        // compress digital-tone-mapped highlights back down
+        const hiM=Math.pow(Math.max(0,lum-0.55)/0.45,1.5);
+        r=clamp(r-hiM*dedigiAmt*28); g=clamp(g-hiM*dedigiAmt*28); b=clamp(b-hiM*dedigiAmt*28);
+        // pull back digital over-saturation
+        const gray=0.2126*r+0.7152*g+0.0722*b;
+        const desat=1-dedigiAmt*0.20;
+        r=gray+(r-gray)*desat; g=gray+(g-gray)*desat; b=gray+(b-gray)*desat;
+        // restore shadow depth (iPhone lifts blacks digitally)
+        const shM=Math.pow(Math.max(0,1-lum*1.4),2);
+        r=clamp(r-shM*dedigiAmt*10); g=clamp(g-shM*dedigiAmt*10); b=clamp(b-shM*dedigiAmt*10);
+      }
+      if(filmBaseAmt>0){
+        // film base density: orange-yellow cast of unexposed negative base
+        r=clamp(r+filmBaseAmt*14); g=clamp(g+filmBaseAmt*6); b=clamp(b-filmBaseAmt*10);
+        // shadow warmth + hi cyan bleed (dye layer contamination)
+        const lum2=(0.299*r+0.587*g+0.114*b)/255;
+        r=clamp(r+filmBaseAmt*5*(1-lum2));
+        b=clamp(b+filmBaseAmt*4*lum2);
+      }
+      d[p]=clamp(r); d[p+1]=clamp(g); d[p+2]=clamp(b);
+    }
+  }
+
+  for(let p=0;p<d.length;p+=4){
+    let r=d[p],g=d[p+1],b=d[p+2];
+
+    // 1. white balance
+    if(temp){r=clamp(r+temp*0.45);b=clamp(b-temp*0.45);}
+    if(tint){g=clamp(g-tint*0.35);r=clamp(r+tint*0.15);b=clamp(b+tint*0.15);}
+
+    // 2. push/pull (exposure+contrast together, like dev time)
+    if(push){
+      const ex=push*40, cb=1+push*0.3;
+      r=clamp((clamp(r+ex)-128)*cb+128);
+      g=clamp((clamp(g+ex)-128)*cb+128);
+      b=clamp((clamp(b+ex)-128)*cb+128);
+    }
+
+    // 3. master tone (exposure/contrast/h/s/w/b/fade)
+    r=toneLUT[r|0]; g=toneLUT[g|0]; b=toneLUT[b|0];
+
+    // 4. curves
+    if(useRGB){r=rgbLUT[r|0];g=rgbLUT[g|0];b=rgbLUT[b|0];}
+    if(useR)r=rLUT[r|0]; if(useG)g=gLUT[g|0]; if(useB)b=bLUT[b|0];
+
+    // 5. HSL targeted
+    if(anyHSL){
+      const res=applyHSL(r,g,b);
+      r=res[0];g=res[1];b=res[2];
+    }
+
+    // 6. global sat + vibrance
+    if(sat||vib){
+      const gray=0.2126*r+0.7152*g+0.0722*b;
+      let satM=1+sat;
+      if(vib){
+        const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+        const curS=(mx-mn)/(mx+0.001);
+        satM+=vib*(1-curS)*0.85;
+      }
+      r=gray+(r-gray)*satM; g=gray+(g-gray)*satM; b=gray+(b-gray)*satM;
+    }
+
+    // 7. film stock emulation
+    if(!stock.neutral && stockLuts){
+      let fr,fg,fb;
+      if(stock.mono){
+        const lum=0.299*clamp(r)+0.587*clamp(g)+0.114*clamp(b);
+        fr=fg=fb=lum;
+      } else {fr=r;fg=g;fb=b;}
+      fr=stockLuts[0][clamp(fr)|0];
+      fg=stockLuts[1][clamp(fg)|0];
+      fb=stockLuts[2][clamp(fb)|0];
+
+      // per-hue sat/lum overlay for colour stocks
+      if(!stock.mono && stock.hueSat){
+        const res=applyStockHSL(fr,fg,fb,stock);
+        fr=res[0];fg=res[1];fb=res[2];
+      }
+      // global stock saturation
+      if(stock.sat!=null && !stock.mono){
+        const gr=0.2126*fr+0.7152*fg+0.0722*fb;
+        fr=gr+(fr-gr)*stock.sat; fg=gr+(fg-gr)*stock.sat; fb=gr+(fb-gr)*stock.sat;
+      }
+
+      // blend by strength
+      r=r+(fr-r)*fs; g=g+(fg-g)*fs; b=b+(fb-b)*fs;
+    }
+
+    d[p]=clamp(r); d[p+1]=clamp(g); d[p+2]=clamp(b);
+  }
+}
+
+/* ── TONE LUT ── */
+function buildToneLUT(){
+  const lut=new Float32Array(256);
+  const ex=A.exposure*0.85, con=1+A.contrast/100*0.65;
+  const hi=A.highlights/100, sh=A.shadows/100;
+  const wh=A.whites/100, bl=A.blacks/100;
+  const fade=A.fade/100;
+  for(let i=0;i<256;i++){
+    let v=i+ex;
+    // soft shoulder: prevents hard clipping
+    v=softClip(v);
+    v=(v-128)*con+128;
+    const t=clamp(v)/255;
+    // region-weighted adjustments
+    v+=hi*55*Math.pow(t,1.6);
+    v+=sh*55*Math.pow(1-t,1.6);
+    v+=wh*35*Math.pow(t,3.5);
+    v-=bl*35*Math.pow(1-t,3.5);
+    // fade: lift blacks, compress highlights
+    if(fade){v=v*(1-fade*0.2)+255*fade*0.16*(1-t*t);}
+    lut[i]=clamp(v);
+  }
+  return lut;
+}
+function softClip(v){
+  // S-shaped shoulder like real film — prevents harsh highlight clipping
+  if(v<=230)return v;
+  const t=(v-230)/80;
+  return 230+(255-230)*(1-Math.exp(-t*2));
+}
+
+/* ── STOCK LUTs ── */
+function buildStockLUTs(stock){
+  const lR=new Float32Array(256),lG=new Float32Array(256),lB=new Float32Array(256);
+  for(let i=0;i<256;i++){
+    const t=i/255;
+    const sW=(1-t)*(1-t), hW=t*t;
+    let mW=1-sW-hW; if(mW<0)mW=0;
+    let r=i+stock.shadow[0]*sW+stock.mid[0]*mW+stock.hi[0]*hW;
+    let g=i+stock.shadow[1]*sW+stock.mid[1]*mW+stock.hi[1]*hW;
+    let b=i+stock.shadow[2]*sW+stock.mid[2]*mW+stock.hi[2]*hW;
+    // film lift (raises shadow floor — faded base)
+    const lift=stock.lift*(1-t)*0.38; r+=lift;g+=lift;b+=lift;
+    // stock-level contrast (applied around midpoint)
+    r=(r-128)*stock.contrast+128;
+    g=(g-128)*stock.contrast+128;
+    b=(b-128)*stock.contrast+128;
+    // per-channel gamma (colour temperature of stock)
+    r=255*Math.pow(clamp(r)/255,1/(stock.gammaR||1));
+    g=255*Math.pow(clamp(g)/255,1/(stock.gammaG||1));
+    b=255*Math.pow(clamp(b)/255,1/(stock.gammaB||1));
+    lR[i]=clamp(r);lG[i]=clamp(g);lB[i]=clamp(b);
+  }
+  return[lR,lG,lB];
+}
+
+/* ── PER-HUE SATURATION/LUMINANCE OVERLAY ── */
+function applyStockHSL(r,g,b,stock){
+  const [h,s,l]=rgbToHsl(r,g,b);
+  const hd=h*360;
+  let ns=s,nl=l;
+  HSL_BANDS.forEach((band,i)=>{
+    let dist=Math.abs(((hd-band.h)+540)%360-180);
+    if(dist<40){
+      const w=Math.pow(1-dist/40,1.5);
+      const sm=stock.hueSat?stock.hueSat[i]:1;
+      const lm=stock.hueLum?stock.hueLum[i]:1;
+      ns=Math.max(0,Math.min(1,s*((1-w)+w*sm)));
+      nl=Math.max(0,Math.min(1,l*((1-w)+w*lm)));
+    }
+  });
+  if(Math.abs(ns-s)<0.001&&Math.abs(nl-l)<0.001)return[r,g,b];
+  return hslToRgb(h,ns,nl);
+}
+
+/* ── GLOBAL HSL ── */
+function applyHSL(r,g,b){
+  const [h,s,l]=rgbToHsl(r,g,b);
+  const hd=h*360;
+  let nh=h,ns=s,nl=l;
+  HSL_BANDS.forEach((band)=>{
+    const v=A.hsl[band.id];
+    if(!v.h&&!v.s&&!v.l)return;
+    let dist=Math.abs(((hd-band.h)+540)%360-180);
+    if(dist<40){
+      const w=Math.pow(1-dist/40,1.5);
+      nh=(nh+v.h/100*0.07*w+1)%1;
+      ns=Math.max(0,Math.min(1,s*(1+v.s/100*w)));
+      nl=Math.max(0,Math.min(1,l+v.l/100*0.35*w));
+    }
+  });
+  return hslToRgb(nh,ns,nl);
+}
+
+/* ── HSL UTILS ── */
+function rgbToHsl(r,g,b){
+  r/=255;g/=255;b/=255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+  let h,s,l=(mx+mn)/2;
+  if(mx===mn){h=s=0;}
+  else{
+    const d=mx-mn;
+    s=l>0.5?d/(2-mx-mn):d/(mx+mn);
+    switch(mx){
+      case r:h=(g-b)/d+(g<b?6:0);break;
+      case g:h=(b-r)/d+2;break;
+      default:h=(r-g)/d+4;
+    }h/=6;
+  }
+  return[h,s,l];
+}
+function hslToRgb(h,s,l){
+  if(s===0){const v=l*255;return[v,v,v];}
+  const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;
+  const hue2=(p,q,t)=>{if(t<0)t+=1;if(t>1)t-=1;if(t<1/6)return p+(q-p)*6*t;if(t<1/2)return q;if(t<2/3)return p+(q-p)*(2/3-t)*6;return p;};
+  return[hue2(p,q,h+1/3)*255,hue2(p,q,h)*255,hue2(p,q,h-1/3)*255];
+}
+
+/* ── GRAIN APPLY ── */
+function applyGrain(d,w,h,grain,grainAmt){
+  const {rField,gField,bField,roughness,colorNoise,lum}=grain;
+  const intensity=(grainAmt||0)/100;
+  const scale=intensity*roughness*90;
+  for(let p=0;p<d.length;p+=4){
+    const i=p>>2;
+    let r=d[p],g=d[p+1],b=d[p+2];
+
+    // luminance mask: grain is strongest in midtones
+    let lumMask=1;
+    if(lum){
+      const L=(0.299*r+0.587*g+0.114*b)/255;
+      // bell curve peaking at ~0.4 (midtones/shadows have most visible grain)
+      lumMask=4*L*(1-L)*1.1;
+    }
+
+    const gn=rField[i]*scale*lumMask;
+    const gc=gField[i]*scale*lumMask;
+    const gb=bField[i]*scale*lumMask;
+
+    if(colorNoise>0){
+      // independent per-channel: real color film has per-layer grain
+      const cScale=colorNoise;
+      d[p]  =clamp(r+gn+rField[i]*scale*cScale);
+      d[p+1]=clamp(g+gc+gField[i]*scale*cScale);
+      d[p+2]=clamp(b+gb+bField[i]*scale*cScale);
+    } else {
+      // monochrome grain (B&W stocks)
+      d[p]  =clamp(r+gn);
+      d[p+1]=clamp(g+gn);
+      d[p+2]=clamp(b+gn);
+    }
+  }
+}
+
+/* ── SPATIAL PASS (clarity/texture/sharpen/dehaze) ── */
+function spatialPass(work,w,h){
+  if(!A.clarity&&!A.texture&&!A.sharpen&&!A.dehaze)
+    return work.getContext("2d").getImageData(0,0,w,h);
+  const src=work.getContext("2d").getImageData(0,0,w,h);
+  const blurC=document.createElement("canvas"); blurC.width=w;blurC.height=h;
+  const bctx=blurC.getContext("2d");
+  bctx.filter="blur(3px)"; bctx.drawImage(work,0,0); bctx.filter="none";
+  const blur=bctx.getImageData(0,0,w,h);
+  const out=mctx.createImageData(w,h);
+  const sd=src.data,bd=blur.data,od=out.data;
+  const amt=A.clarity/100*0.55+A.texture/100*0.75+A.sharpen/100*1.1;
+  const dh=A.dehaze/100;
+  for(let p=0;p<sd.length;p+=4){
+    for(let c=0;c<3;c++){
+      let v=sd[p+c];
+      const detail=v-bd[p+c];
+      v+=detail*amt;
+      if(dh){v=(v-128)*(1+dh*0.35)+128+dh*6;}
+      od[p+c]=clamp(v);
+    }
+    od[p+3]=255;
+  }
+  return out;
+}
+
+/* ── VIGNETTE ── */
+function applyVignette(w,h,amt,feather){
+  const cx=w/2,cy=h/2;
+  const outerR=Math.max(w,h)*(0.58+feather*0.3);
+  const innerR=Math.min(w,h)*(0.28+feather*0.2);
+  const grad=mctx.createRadialGradient(cx,cy,Math.max(1,innerR),cx,cy,outerR);
+  if(amt>0){
+    grad.addColorStop(0,"rgba(0,0,0,0)");
+    grad.addColorStop(1,`rgba(0,0,0,${Math.min(0.92,amt*0.7)})`);
+    mctx.save();mctx.globalCompositeOperation="multiply";
+  } else {
+    grad.addColorStop(0,"rgba(255,255,255,0)");
+    grad.addColorStop(1,`rgba(255,255,255,${Math.min(0.6,-amt*0.5)})`);
+    mctx.save();mctx.globalCompositeOperation="screen";
+  }
+  mctx.fillStyle=grad; mctx.fillRect(0,0,w,h); mctx.restore();
+}
+
+/* ── HALATION ── */
+function applyHalation(work,w,h,str){
+  const off=document.createElement("canvas"); off.width=w;off.height=h;
+  const oc=off.getContext("2d"); oc.drawImage(work,0,0);
+  const id=oc.getImageData(0,0,w,h); const d=id.data;
+  for(let p=0;p<d.length;p+=4){
+    const lum=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2];
+    if(lum>190){d[p]=clamp(d[p]+45);d[p+1]=clamp(d[p+1]-12);d[p+2]=clamp(d[p+2]-35);d[p+3]=255;}
+    else d[p+3]=0;
+  }
+  oc.putImageData(id,0,0);
+  mctx.save();mctx.filter=`blur(${5+str*8}px)`;
+  mctx.globalCompositeOperation="screen";mctx.globalAlpha=Math.min(0.88,str);
+  mctx.drawImage(off,0,0);mctx.restore();
+}
+
+/* ── BLOOM ── */
+function applyBloom(work,w,h,str){
+  const off=document.createElement("canvas"); off.width=w;off.height=h;
+  const oc=off.getContext("2d"); oc.drawImage(work,0,0);
+  const id=oc.getImageData(0,0,w,h); const d=id.data;
+  for(let p=0;p<d.length;p+=4){
+    const lum=0.299*d[p]+0.587*d[p+1]+0.114*d[p+2];
+    d[p+3]=clamp(Math.max(0,(lum-145)/110)*255);
+  }
+  oc.putImageData(id,0,0);
+  mctx.save();mctx.filter=`blur(${10+str*16}px)`;
+  mctx.globalCompositeOperation="screen";mctx.globalAlpha=Math.min(0.65,str*0.75);
+  mctx.drawImage(off,0,0);mctx.restore();
+}
+
+drawCurve();
+})();
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
