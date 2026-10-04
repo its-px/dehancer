@@ -51,7 +51,7 @@ header{
   display:flex;align-items:center;justify-content:center;
   min-height:42vh;max-height:55vh;overflow:hidden;
 }
-#mainCanvas{max-width:100%;max-height:55vh;width:auto;height:auto;display:block;}
+#mainCanvas,#glCanvas{max-width:100%;max-height:55vh;width:auto;height:auto;display:block;}
 .empty{
   position:absolute;inset:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:10px;cursor:pointer;
@@ -462,6 +462,9 @@ function savePresets(){try{localStorage.setItem("grain.presets",JSON.stringify(P
 /* ════ ELEMENTS ════ */
 const mainCanvas=document.getElementById("mainCanvas");
 const mctx=mainCanvas.getContext("2d",{willReadFrequently:true});
+// WebGL2 output canvas; shown instead of mainCanvas while the GL pipeline is live (mainCanvas = CPU fallback)
+const glc=document.createElement("canvas");glc.id="glCanvas";glc.style.display="none";mainCanvas.after(glc);
+function show(c){mainCanvas.style.display=c===mainCanvas?"":"none";glc.style.display=c===glc?"":"none";}
 const histCanvas=document.getElementById("histCanvas");
 const hctx=histCanvas.getContext("2d");
 const curveCanvas=document.getElementById("curveCanvas");
@@ -499,7 +502,7 @@ document.querySelectorAll("input[type=range][data-k]").forEach(sl=>{
     sl.parentElement.querySelector(".val").textContent=v;
     updateSliderBg(sl);
     updateThumbVal(sl,v);
-    if(key==="grain"||key==="grainSize"||key==="grainRough") grainSeeds=null;
+    if(key==="grainSize"||key==="grainRough") grainSeeds=null; // amount is live, field kept
     schedRender();
   }
   sl.addEventListener("input",upd);
@@ -581,6 +584,7 @@ fileIn.addEventListener("change",e=>{
       srcCanvas.width=Math.round(w*sc); srcCanvas.height=Math.round(h*sc);
       srcCanvas.getContext("2d").drawImage(img,0,0,srcCanvas.width,srcCanvas.height);
       hasImg=true;grainSeeds=null;colorCache=null;
+      if(G)glSetImage();
       document.getElementById("emptyEl").style.display="none";
       compareBar.classList.add("on");
       document.getElementById("exportBtn").disabled=false;
@@ -594,9 +598,13 @@ fileIn.addEventListener("change",e=>{
 
 /* ════ COMPARE ════ */
 let comparing=false;
-mainCanvas.addEventListener("pointerdown",()=>{if(!hasImg)return;comparing=true;showOrig();splitLabel.textContent="ORIGINAL";});
-["pointerup","pointerleave","pointercancel"].forEach(ev=>mainCanvas.addEventListener(ev,()=>{if(comparing){comparing=false;schedRender();}splitLabel.textContent="";}));
+[mainCanvas,glc].forEach(cv=>{
+  cv.addEventListener("pointerdown",()=>{if(!hasImg)return;comparing=true;showOrig();splitLabel.textContent="ORIGINAL";});
+  ["pointerup","pointerleave","pointercancel"].forEach(ev=>cv.addEventListener(ev,()=>{if(comparing){comparing=false;schedRender();}splitLabel.textContent="";}));
+});
 function showOrig(){
+  if(G){glOut(G.T.S.t,{am:0,dh:0,va:0,vi:1,vo:2,ha:0,ba:0,sz:[srcCanvas.width,srcCanvas.height]});return;}
+  show(mainCanvas);
   mainCanvas.width=srcCanvas.width; mainCanvas.height=srcCanvas.height;
   mctx.drawImage(srcCanvas,0,0);
   drawHistogram(srcCanvas);
@@ -763,7 +771,7 @@ renderPresets();
 document.getElementById("exportBtn").addEventListener("click",()=>{
   if(!hasImg)return;
   try{
-    mainCanvas.toBlob(blob=>{
+    (G?glc:mainCanvas).toBlob(blob=>{
       if(!blob){fallbackExport();return;}
       try{
         const url=URL.createObjectURL(blob);
@@ -778,7 +786,7 @@ document.getElementById("exportBtn").addEventListener("click",()=>{
 function fallbackExport(){
   try{
     const w=window.open();
-    if(w){w.document.write(`<html><body style="margin:0;background:#000"><img src="${mainCanvas.toDataURL("image/jpeg",0.93)}" style="max-width:100%;display:block"></body></html>`);w.document.close();}
+    if(w){w.document.write(`<html><body style="margin:0;background:#000"><img src="${(G?glc:mainCanvas).toDataURL("image/jpeg",0.93)}" style="max-width:100%;display:block"></body></html>`);w.document.close();}
     else{badge.textContent="Allow popups or long-press image to save";badge.classList.add("on");setTimeout(()=>{badge.classList.remove("on");badge.textContent="Rendering…";},3500);}
   }catch(e){console.error(e);}
 }
@@ -786,12 +794,10 @@ function fallbackExport(){
 /* ════════════════════════════════════════════
    HISTOGRAM
 ════════════════════════════════════════════ */
-function drawHistogram(src){
+function drawHistogram(src,dd){
   const W=histCanvas.width=histCanvas.offsetWidth||300;
   const H=histCanvas.height=36;
-  const sc=src.getContext("2d");
-  const id=sc.getImageData(0,0,src.width,src.height);
-  const d=id.data;
+  const d=dd||src.getContext("2d").getImageData(0,0,src.width,src.height).data;
   const rh=new Uint32Array(256),gh=new Uint32Array(256),bh=new Uint32Array(256);
   for(let p=0;p<d.length;p+=4){rh[d[p]]++;gh[d[p+1]]++;bh[d[p+2]]++;}
   const mx=Math.max(...rh,...gh,...bh)||1;
@@ -855,7 +861,7 @@ function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal){
         for(let x=0;x<r;x++){sum+=field[y*w+x];cnt++;}
         for(let x=0;x<w;x++){
           if(x+r<w){sum+=field[y*w+x+r];cnt++;}
-          if(x-r>=0){sum-=field[y*w+x-r-1];cnt--;}
+          if(x-r-1>=0){sum-=field[y*w+x-r-1];cnt--;} // was x-r>=0: read field[-1] -> NaN -> black frame
           tmp[y*w+x]=cnt?sum/cnt:0;
         }
       }
@@ -865,7 +871,7 @@ function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal){
         for(let y=0;y<r;y++){sum+=tmp[y*w+x];cnt++;}
         for(let y=0;y<h;y++){
           if(y+r<h){sum+=tmp[(y+r)*w+x];cnt++;}
-          if(y-r>=0){sum-=tmp[(y-r-1)*w+x];cnt--;}
+          if(y-r-1>=0){sum-=tmp[(y-r-1)*w+x];cnt--;}
           field[y*w+x]=cnt?sum/cnt:0;
         }
       }
@@ -898,6 +904,11 @@ function schedRender(){
 function clamp(v){return v<0?0:v>255?255:v;}
 
 function doRender(){
+  if(G&&!G.gl.isContextLost()){try{return glRender();}catch(e){console.warn("GL render failed, using CPU",e);G=null;}}
+  cpuRender();
+}
+function cpuRender(){
+  show(mainCanvas);
   const sw=srcCanvas.width,sh=srcCanvas.height;
   mainCanvas.width=sw; mainCanvas.height=sh;
 
@@ -954,9 +965,9 @@ for(let v=0;v<256;v++){const i=Math.min(LN-2,v>>3);LIX[v]=i;LFR[v]=(v-LNODE[i])/
 const NOCOL=new Set(["texture","clarity","sharpen","dehaze","vignette","vigFeather","bloom","halation","grain","grainSize","grainRough"]);
 function colorKey(){return JSON.stringify(A,(k,v)=>NOCOL.has(k)?undefined:v);}
 let lut=null,lutKey="";
+function getLUT(key){if(lutKey!==key){lut=buildColorLUT();lutKey=key;}return lut;}
 function pixelPass(d,key){
-  if(lutKey!==key){lut=buildColorLUT();lutKey=key;}
-  const L=lut,DG=LN*3,DB=LN*LN*3;
+  const L=getLUT(key),DG=LN*3,DB=LN*LN*3;
   for(let p=0;p<d.length;p+=4){
     const r=d[p],g=d[p+1],b=d[p+2];
     const fr=LFR[r],fg=LFR[g],fb=LFR[b],o=((LIX[b]*LN+LIX[g])*LN+LIX[r])*3;
@@ -1311,6 +1322,146 @@ function applyBloom(work,w,h,str){
   mctx.globalCompositeOperation="screen";mctx.globalAlpha=Math.min(0.65,str*0.75);
   mctx.drawImage(off,0,0);mctx.restore();
 }
+
+/* ════════════════════════════════════════════
+   WEBGL2 PIPELINE
+   src ─LUT3D+grain→ C ─┬─ gauss σ3 → B (clarity/texture/sharpen)
+                        ├─ ½-res mask → gauss → H (halation) / M (bloom)
+                        └─ final: spatial+dehaze, vignette, screen H, screen M → canvas (+ small FBO for histogram)
+   Same maths as the CPU path above, which stays as the fallback (no WebGL2 / context lost / GL error).
+════════════════════════════════════════════ */
+let G=null;
+const VS=`#version 300 es
+in vec2 p;out vec2 uv;void main(){uv=p*.5+.5;gl_Position=vec4(p,0,1);}`;
+const FH=`#version 300 es
+precision highp float;precision highp sampler3D;in vec2 uv;out vec4 o;const vec3 Y=vec3(.299,.587,.114);`;
+const FS={
+// colour LUT (nodes 0,8,…,248,255 → non-uniform last cell, remapped so hardware trilinear == CPU trilinear) + grain
+C:[["S","N","L"],`uniform sampler2D S,N;uniform sampler3D L;uniform float gs,cn,lm;
+void main(){vec3 v=texture(S,uv).rgb*255.,i=mix(v/8.,31.+(v-248.)/7.,step(248.,v));
+vec3 c=texture(L,(i+.5)/33.).rgb;
+if(gs>0.){vec3 f=texture(N,uv).rgb-.5;float Lm=dot(c,Y),m=lm>0.?4.*Lm*(1.-Lm)*1.1:1.;c+=cn>0.?f*gs*(m+cn):vec3(f.r*gs*m);}
+o=vec4(clamp(c,0.,1.),1);}`],
+// separable gaussian, linear-sampling pairs; z=1 → transparent outside (canvas blur filter edge behaviour)
+B:[["T"],`uniform sampler2D T;uniform vec2 d;uniform float s,z;
+vec4 f(vec2 q){return z>0.&&(q.x<0.||q.y<0.||q.x>1.||q.y>1.)?vec4(0):texture(T,q);}
+void main(){int R=int(ceil(s*3.));float k=-.5/(s*s),W=1.;vec4 a=texture(T,uv);
+for(int i=1;i<=R;i+=2){float w1=exp(float(i*i)*k),w2=exp(float((i+1)*(i+1))*k),w=w1+w2,x=float(i)+w2/w;a+=(f(uv+d*x)+f(uv-d*x))*w;W+=2.*w;}
+o=a/W;}`],
+// ½-res premultiplied glow source: m=0 halation (lum>190, warm shift), m=1 bloom (alpha ramp 145..255)
+K:[["T"],`uniform sampler2D T;uniform float m;
+vec4 g(ivec2 q){vec3 c=texelFetch(T,min(q,textureSize(T,0)-1),0).rgb;float l=dot(c,Y);
+if(m<.5)return l>190./255.?vec4(clamp(c+vec3(45,-12,-35)/255.,0.,1.),1):vec4(0);
+float a=clamp((l*255.-145.)/110.,0.,1.);return vec4(c*a,a);}
+void main(){ivec2 q=ivec2(gl_FragCoord.xy)*2;o=(g(q)+g(q+ivec2(1,0))+g(q+ivec2(0,1))+g(q+1))*.25;}`],
+// final composite; fy flips for the default framebuffer (textures are stored top row first)
+F:[["C","B","H","M"],`uniform sampler2D C,B,H,M;uniform float am,dh,va,vi,vo,ha,ba,fy;uniform vec2 sz;
+void main(){vec2 q=fy>0.?vec2(uv.x,1.-uv.y):uv;vec3 c=texture(C,q).rgb;
+if(am!=0.)c+=(c-texture(B,q).rgb)*am;
+if(dh!=0.)c=(c-128./255.)*(1.+dh*.35)+(128.+dh*6.)/255.;
+c=clamp(c,0.,1.);
+if(va!=0.){float t=clamp((length(q*sz-sz*.5)-vi)/(vo-vi),0.,1.);c=va>0.?c*(1.-va*t):c-va*t*(1.-c);}
+if(ha>0.)c+=ha*texture(H,q).rgb*(1.-c);
+if(ba>0.)c+=ba*texture(M,q).rgb*(1.-c);
+o=vec4(c,1);}`],
+};
+function initGL(){
+  G=null;
+  try{
+    const gl=glc.getContext("webgl2",{alpha:false,antialias:false,depth:false,stencil:false,premultipliedAlpha:false,preserveDrawingBuffer:true});
+    if(!gl||gl.isContextLost())return;
+    const g={gl,T:{},lk:"",gf:null};
+    const sh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s;};
+    const vs=sh(gl.VERTEX_SHADER,VS);
+    for(const k in FS){
+      const [smp,src]=FS[k],p=gl.createProgram();
+      gl.attachShader(p,vs);gl.attachShader(p,sh(gl.FRAGMENT_SHADER,FH+src));gl.bindAttribLocation(p,0,"p");gl.linkProgram(p);
+      if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
+      gl.useProgram(p);smp.forEach((n,i)=>gl.uniform1i(gl.getUniformLocation(p,n),i));
+      g["p"+k]={p,smp,l:{}};
+    }
+    gl.bindVertexArray(gl.createVertexArray());gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+    // 3D colour LUT: RGB16F is linearly filterable everywhere (32F is not on iOS)
+    g.lt=gl.createTexture();gl.bindTexture(gl.TEXTURE_3D,g.lt);gl.texStorage3D(gl.TEXTURE_3D,1,gl.RGB16F,LN,LN,LN);
+    [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(k=>gl.texParameteri(gl.TEXTURE_3D,k,gl.LINEAR));
+    [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T,gl.TEXTURE_WRAP_R].forEach(k=>gl.texParameteri(gl.TEXTURE_3D,k,gl.CLAMP_TO_EDGE));
+    g.lb=new Float32Array(LN*LN*LN*3);
+    // intermediates: RGBA16F if renderable, else RGBA8
+    g.F=gl.RGBA8;
+    if(gl.getExtension("EXT_color_buffer_float")||gl.getExtension("EXT_color_buffer_half_float")){
+      const t=tgt(gl,4,4,gl.RGBA16F);
+      if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE)g.F=gl.RGBA16F;
+      gl.deleteTexture(t.t);gl.deleteFramebuffer(t.fb);
+    }
+    G=g;
+  }catch(e){console.warn("WebGL2 unavailable, using CPU",e);G=null;}
+}
+function tgt(gl,w,h,f){
+  const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texStorage2D(gl.TEXTURE_2D,1,f,w,h);
+  [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.LINEAR));
+  [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T].forEach(k=>gl.texParameteri(gl.TEXTURE_2D,k,gl.CLAMP_TO_EDGE));
+  const fb=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fb);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  return{t,fb,w,h};
+}
+// (re)allocate all targets for the current image — once per load, never per render
+function glSetImage(){
+  const g=G,gl=g.gl,w=srcCanvas.width,h=srcCanvas.height,hw=w+1>>1,hh=h+1>>1,F=g.F,HW=256,HH=Math.max(1,Math.round(HW*h/w));
+  Object.values(g.T).forEach(x=>{gl.deleteTexture(x.t);gl.deleteFramebuffer(x.fb);});
+  g.T={S:tgt(gl,w,h,gl.RGBA8),N:tgt(gl,w,h,gl.RGBA8),C:tgt(gl,w,h,F),T:tgt(gl,w,h,F),B:tgt(gl,w,h,F),
+    h0:tgt(gl,hw,hh,F),h1:tgt(gl,hw,hh,F),H:tgt(gl,hw,hh,F),M:tgt(gl,hw,hh,F),hist:tgt(gl,HW,HH,gl.RGBA8)};
+  gl.bindTexture(gl.TEXTURE_2D,g.T.S.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,gl.RGBA,gl.UNSIGNED_BYTE,srcCanvas);
+  g.gf=null;g.gb=null;g.hb=new Uint8Array(HW*HH*4);
+  glc.width=w;glc.height=h;
+}
+function draw(p,o,tx,u){
+  const gl=G.gl;gl.bindFramebuffer(gl.FRAMEBUFFER,o?o.fb:null);gl.viewport(0,0,o?o.w:glc.width,o?o.h:glc.height);gl.useProgram(p.p);
+  tx.forEach((t,i)=>{gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(p.smp[i]==="L"?gl.TEXTURE_3D:gl.TEXTURE_2D,t);});
+  for(const k in u){const v=u[k],l=p.l[k]??=gl.getUniformLocation(p.p,k);v.length?gl.uniform2f(l,v[0],v[1]):gl.uniform1f(l,v);}
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+// final composite to the canvas, then again into a 256px-wide target for the histogram readback
+function glOut(c,U){
+  const g=G,gl=g.gl,T=g.T,tx=[c,T.B.t,T.H.t,T.M.t];
+  U.fy=1;draw(g.pF,null,tx,U);U.fy=0;draw(g.pF,T.hist,tx,U);
+  gl.readPixels(0,0,T.hist.w,T.hist.h,gl.RGBA,gl.UNSIGNED_BYTE,g.hb);gl.bindFramebuffer(gl.FRAMEBUFFER,null); // WebKit snapshots (toBlob/drawImage) read the bound FBO
+  drawHistogram(null,g.hb);show(glc);
+}
+function glRender(){
+  const g=G,gl=g.gl,T=g.T,w=srcCanvas.width,h=srcCanvas.height,stock=getStock();
+  const ck=colorKey();
+  if(g.lk!==ck){const L=getLUT(ck),b=g.lb;for(let i=0;i<b.length;i++)b[i]=L[i]/255;
+    gl.bindTexture(gl.TEXTURE_3D,g.lt);gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,LN,LN,LN,gl.RGB,gl.FLOAT,b);g.lk=ck;}
+  // grain: CPU-built field (same per-stock fingerprint code) uploaded once per stock/size/roughness; amount is a live uniform
+  let gs=0,cn=0,lm=0;
+  if(A.grain>0){
+    if(!grainSeeds)grainSeeds=buildGrainField(w,h,stock,A.grainSize,A.grainRough);
+    const s=grainSeeds;
+    if(g.gf!==s){
+      const u=g.gb||(g.gb=new Uint8ClampedArray(w*h*4)),{rField:r,gField:gg,bField:b}=s;
+      for(let i=0,j=0;i<r.length;i++,j+=4){u[j]=(r[i]+.5)*255;u[j+1]=(gg[i]+.5)*255;u[j+2]=(b[i]+.5)*255;}
+      gl.bindTexture(gl.TEXTURE_2D,T.N.t);gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,u);g.gf=s;
+    }
+    gs=A.grain/100*s.roughness*90/255;cn=s.colorNoise||0;lm=s.lum?1:0;
+  }
+  draw(g.pC,T.C,[T.S.t,T.N.t,g.lt],{gs,cn,lm});
+  const bl=(a,b,dx,dy,s,z)=>draw(g.pB,b,[a.t],{d:[dx/a.w,dy/a.h],s,z});
+  const am=A.clarity/100*0.55+A.texture/100*0.75+A.sharpen/100*1.1,dh=A.dehaze/100;
+  if(am){bl(T.C,T.T,1,0,3,0);bl(T.T,T.B,0,1,3,0);}
+  // glows at half res (σ halved); canvas blur(Npx) == gaussian σ=N
+  const glow=(m,sig,out)=>{draw(g.pK,T.h0,[T.C.t],{m});bl(T.h0,T.h1,1,0,sig/2,1);bl(T.h1,out,0,1,sig/2,1);};
+  const hal=A.halation/100+(stock.grain&&stock.grain.halation?0.3*(A.filmStr/100):0);
+  if(hal>0)glow(0,5+hal*8,T.H);
+  if(A.bloom>0)glow(1,10+A.bloom/100*16,T.M);
+  const va=A.vignette/100,vf=A.vigFeather/100;
+  glOut(T.C.t,{am,dh,va:va>0?Math.min(0.92,va*0.7):va<0?-Math.min(0.6,-va*0.5):0,
+    vi:Math.max(1,Math.min(w,h)*(0.28+vf*0.2)),vo:Math.max(w,h)*(0.58+vf*0.3),
+    ha:hal>0?Math.min(0.88,hal):0,ba:A.bloom>0?Math.min(0.65,A.bloom/100*0.75):0,sz:[w,h]});
+}
+glc.addEventListener("webglcontextlost",e=>{e.preventDefault();G=null;if(hasImg&&!comparing)schedRender();});
+glc.addEventListener("webglcontextrestored",()=>{initGL();if(G&&hasImg){glSetImage();schedRender();}});
+initGL();
 
 drawCurve();
 })();
