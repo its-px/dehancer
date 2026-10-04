@@ -580,7 +580,7 @@ fileIn.addEventListener("change",e=>{
       const sc=Math.min(1,MAX/Math.max(w,h));
       srcCanvas.width=Math.round(w*sc); srcCanvas.height=Math.round(h*sc);
       srcCanvas.getContext("2d").drawImage(img,0,0,srcCanvas.width,srcCanvas.height);
-      hasImg=true;grainSeeds=null;
+      hasImg=true;grainSeeds=null;colorCache=null;
       document.getElementById("emptyEl").style.display="none";
       compareBar.classList.add("on");
       document.getElementById("exportBtn").disabled=false;
@@ -887,7 +887,7 @@ function buildGrainField(w,h,stock,grainSizeVal,grainRoughVal){
 /* ════════════════════════════════════════════
    RENDER PIPELINE
 ════════════════════════════════════════════ */
-let queued=false;
+let queued=false,colorCache=null; // colorCache: colour-pass output for current image+colour state
 function schedRender(){
   if(!hasImg||comparing)return;
   if(queued)return;
@@ -903,15 +903,17 @@ function doRender(){
 
   // working canvas
   const work=document.createElement("canvas"); work.width=sw; work.height=sh;
-  const wctx=work.getContext("2d"); wctx.drawImage(srcCanvas,0,0);
+  const wctx=work.getContext("2d");
 
-  const id=wctx.getImageData(0,0,sw,sh);
+  // colour pass: cached per colour state, so grain/vignette/bloom/halation/detail changes skip it
+  const ck=colorKey();
+  let id;
+  if(colorCache&&colorCache.key===ck){id=new ImageData(colorCache.d.slice(),sw,sh);}
+  else{
+    wctx.drawImage(srcCanvas,0,0); id=wctx.getImageData(0,0,sw,sh);
+    pixelPass(id.data,ck); colorCache={key:ck,d:id.data.slice()};
+  }
   const d=id.data;
-
-  // pixel pipeline
-  pixelPass(d,sw,sh);
-
-  id.data.set(d);
   wctx.putImageData(id,0,0);
 
   // grain overlay (after tone, before spatial)
@@ -942,13 +944,35 @@ function doRender(){
 
 function getStock(){return STOCKS.find(s=>s.id===A.filmStock)||STOCKS[0];}
 
-/* ── PIXEL PASS ── */
-function pixelPass(d,w,h){
+/* ── PIXEL PASS ──
+   Whole colour chain is a pure f(rgb): baked once per colour-state change into a 33³ LUT
+   (nodes at 0,8,…,248,255 so 8-bit inputs land on exact nodes where possible), applied trilinearly. */
+const LN=33,LNODE=[],LIX=new Uint8Array(256),LFR=new Float32Array(256);
+for(let i=0;i<LN;i++)LNODE[i]=i<LN-1?i*8:255;
+for(let v=0;v<256;v++){const i=Math.min(LN-2,v>>3);LIX[v]=i;LFR[v]=(v-LNODE[i])/(LNODE[i+1]-LNODE[i]);}
+// non-colour keys: changing these must not rebuild the LUT
+const NOCOL=new Set(["texture","clarity","sharpen","dehaze","vignette","vigFeather","bloom","halation","grain","grainSize","grainRough"]);
+function colorKey(){return JSON.stringify(A,(k,v)=>NOCOL.has(k)?undefined:v);}
+let lut=null,lutKey="";
+function pixelPass(d,key){
+  if(lutKey!==key){lut=buildColorLUT();lutKey=key;}
+  const L=lut,DG=LN*3,DB=LN*LN*3;
+  for(let p=0;p<d.length;p+=4){
+    const r=d[p],g=d[p+1],b=d[p+2];
+    const fr=LFR[r],fg=LFR[g],fb=LFR[b],o=((LIX[b]*LN+LIX[g])*LN+LIX[r])*3;
+    for(let c=0;c<3;c++){
+      const i=o+c;
+      const x00=L[i]+(L[i+3]-L[i])*fr, x10=L[i+DG]+(L[i+DG+3]-L[i+DG])*fr;
+      const x01=L[i+DB]+(L[i+DB+3]-L[i+DB])*fr, x11=L[i+DB+DG]+(L[i+DB+DG+3]-L[i+DB+DG])*fr;
+      const y0=x00+(x10-x00)*fg, y1=x01+(x11-x01)*fg;
+      d[p+c]=y0+(y1-y0)*fb;
+    }
+  }
+}
+function buildColorLUT(){
   const stock=getStock();
   const fs=A.filmStr/100;
   const push=A.pushpull/100;
-
-  // build LUTs
   const toneLUT=buildToneLUT();
   const rgbLUT=curveLUT(A.curves.rgb);
   const rLUT=curveLUT(A.curves.r), gLUT=curveLUT(A.curves.g), bLUT=curveLUT(A.curves.b);
@@ -956,16 +980,16 @@ function pixelPass(d,w,h){
   const useR=!isIdentityCurve(A.curves.r), useG=!isIdentityCurve(A.curves.g), useB=!isIdentityCurve(A.curves.b);
   let stockLuts=null;
   if(!stock.neutral) stockLuts=buildStockLUTs(stock);
-
   const temp=A.temp, tint=A.tint, vib=A.vibrance/100, sat=A.saturation/100;
   const anyHSL=HSL_BANDS.some(b=>{const v=A.hsl[b.id];return v.h||v.s||v.l;});
-
-  // analog pre-pass: undo digital photography over-processing
   const dedigiAmt=A.dedigi/100;
   const filmBaseAmt=A.filmBase/100;
-  if(dedigiAmt>0||filmBaseAmt>0){
-    for(let p=0;p<d.length;p+=4){
-      let r=d[p],g=d[p+1],b=d[p+2];
+  const out=new Float32Array(LN*LN*LN*3);
+  let o=0;
+  for(let bi=0;bi<LN;bi++)for(let gi=0;gi<LN;gi++)for(let ri=0;ri<LN;ri++){
+    let r=LNODE[ri],g=LNODE[gi],b=LNODE[bi];
+    // analog pre-pass: undo digital photography over-processing
+    if(dedigiAmt>0||filmBaseAmt>0){
       if(dedigiAmt>0){
         const lum=(0.299*r+0.587*g+0.114*b)/255;
         // compress digital-tone-mapped highlights back down
@@ -987,12 +1011,9 @@ function pixelPass(d,w,h){
         r=clamp(r+filmBaseAmt*5*(1-lum2));
         b=clamp(b+filmBaseAmt*4*lum2);
       }
-      d[p]=clamp(r); d[p+1]=clamp(g); d[p+2]=clamp(b);
+      // old per-pixel pass stored to 8-bit here
+      r=Math.round(clamp(r)); g=Math.round(clamp(g)); b=Math.round(clamp(b));
     }
-  }
-
-  for(let p=0;p<d.length;p+=4){
-    let r=d[p],g=d[p+1],b=d[p+2];
 
     // 1. white balance
     if(temp){r=clamp(r+temp*0.45);b=clamp(b-temp*0.45);}
@@ -1057,8 +1078,9 @@ function pixelPass(d,w,h){
       r=r+(fr-r)*fs; g=g+(fg-g)*fs; b=b+(fb-b)*fs;
     }
 
-    d[p]=clamp(r); d[p+1]=clamp(g); d[p+2]=clamp(b);
+    out[o++]=clamp(r); out[o++]=clamp(g); out[o++]=clamp(b);
   }
+  return out;
 }
 
 /* ── TONE LUT ── */
